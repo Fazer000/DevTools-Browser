@@ -1,0 +1,6 @@
+{
+  "name": "DevBrowser",
+  "description": "Android browser with Chrome DevTools: element inspector, live console, network logger, DOM tree editor & session persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
