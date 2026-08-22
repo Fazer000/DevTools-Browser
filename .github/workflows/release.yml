@@ -37,13 +37,16 @@ jobs:
           cache-disabled: true
           generate-job-summary: false
 
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x ./gradlew
+
       - name: Build Release APK & Bundle
         env:
           KEYSTORE_PATH: ${{ secrets.KEYSTORE_PATH }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease bundleRelease --no-daemon
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
 
       - name: Prepare Release Artifacts
         run: |

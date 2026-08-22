@@ -26,5 +26,8 @@ jobs:
           cache-disabled: true
           generate-job-summary: false
 
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x ./gradlew
+
       - name: Build Debug & Release
-        run: gradle assembleDebug assembleRelease --no-daemon
+        run: ./gradlew assembleDebug assembleRelease --no-daemon
