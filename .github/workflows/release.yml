@@ -1,25 +1,21 @@
-name: Build & Publish Release
+name: Build Release
 
 on:
   push:
     branches: [ "main", "master" ]
-    tags:
-      - 'v*'
   pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
-    inputs:
-      version_name:
-        description: 'Release Version Name (e.g. v1.0.0)'
-        required: true
-        default: 'v1.0.0'
 
-permissions:
-  contents: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-release:
-    name: Build & Create GitHub Release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout Code
@@ -30,39 +26,84 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
+          cache: gradle
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.3.1'
-          cache-disabled: true
-          generate-job-summary: false
-
-      - name: Build Release APK & Bundle
-        env:
-          KEYSTORE_PATH: ${{ secrets.KEYSTORE_PATH }}
-          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: gradle assembleRelease bundleRelease --no-daemon
-
-      - name: Prepare Release Artifacts
+      - name: Accept Android SDK licenses & Install Components
         run: |
-          mkdir -p release_artifacts
-          cp app/build/outputs/apk/release/*.apk release_artifacts/DevBrowser-release.apk || true
-          cp app/build/outputs/bundle/release/*.aab release_artifacts/DevBrowser-release.aab || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
 
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Setup Keystores and Properties
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            echo "Restoring debug.keystore from base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f "debug.keystore" ]; then
+            echo "Generating new debug.keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US"
+          fi
+          if [ -f "release.keystore.base64" ]; then
+            echo "Restoring release.keystore from base64..."
+            base64 -d release.keystore.base64 > release.keystore
+          elif [ ! -f "release.keystore" ]; then
+            echo "Generating new release.keystore..."
+            keytool -genkey -v -keystore release.keystore -storepass releasepass -alias releasekey -keypass releasepass -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Release, OU=Development, O=App, L=San Francisco, ST=California, C=US"
+          fi
+
+          if [ ! -f "keystore.properties" ]; then
+            echo "Creating keystore.properties..."
+            echo "storeFile=release.keystore" > keystore.properties
+            echo "storePassword=releasepass" >> keystore.properties
+            echo "keyAlias=releasekey" >> keystore.properties
+            echo "keyPassword=releasepass" >> keystore.properties
+          fi
+
+      - name: Calculate and set release version
+        id: versioning
+        run: |
+          CURRENT_VERSION=$(grep -E 'versionName\s*=\s*"[^"]+"' app/build.gradle.kts | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/')
+          if [ -z "$CURRENT_VERSION" ]; then
+            CURRENT_VERSION="1.0.0"
+          fi
+          echo "Current app versionName in build.gradle.kts: $CURRENT_VERSION"
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          MAJOR=${MAJOR:-1}
+          MINOR=${MINOR:-0}
+          PATCH=${PATCH:-0}
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION_NAME="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          NEW_TAG="v${NEW_VERSION_NAME}"
+          echo "tag_name=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "version_name=$NEW_VERSION_NAME" >> $GITHUB_OUTPUT
+
+      - name: Build Debug & Release APK / AAB
+        run: ./gradlew assembleDebug assembleRelease bundleRelease --no-daemon --stacktrace
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-APKs
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/*.apk
+
+      - name: Create or Update GitHub Release
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || inputs.version_name }}
-          name: Release ${{ github.ref_name || inputs.version_name }}
+          tag_name: ${{ steps.versioning.outputs.tag_name }}
+          name: Release ${{ steps.versioning.outputs.tag_name }}
           draft: false
           prerelease: false
-          generate_release_notes: true
+          overwrite: true
+          make_latest: true
           files: |
-            release_artifacts/DevBrowser-release.apk
-            release_artifacts/DevBrowser-release.aab
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/bundle/release/*.aab
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

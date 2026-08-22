@@ -2,14 +2,18 @@ name: CI Build
 
 on:
   push:
+    branches: [ "main", "master" ]
   pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
-    name: Build & Check
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -19,13 +23,40 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
+          cache: gradle
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '9.3.1'
-          cache-disabled: true
-          generate-job-summary: false
+      - name: Accept Android SDK licenses & Install Components
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-35" "build-tools;35.0.0" || true
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Setup Keystores and Properties
+        run: |
+          if [ -f "debug.keystore.base64" ]; then
+            echo "Restoring debug.keystore from base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+          elif [ ! -f "debug.keystore" ]; then
+            echo "Generating new debug.keystore..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug, O=Android, C=US"
+          fi
+          if [ -f "release.keystore.base64" ]; then
+            echo "Restoring release.keystore from base64..."
+            base64 -d release.keystore.base64 > release.keystore
+          elif [ ! -f "release.keystore" ]; then
+            echo "Generating new release.keystore..."
+            keytool -genkey -v -keystore release.keystore -storepass releasepass -alias releasekey -keypass releasepass -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Release, OU=Development, O=App, L=San Francisco, ST=California, C=US"
+          fi
+          if [ ! -f "keystore.properties" ]; then
+            echo "Creating keystore.properties..."
+            echo "storeFile=release.keystore" > keystore.properties
+            echo "storePassword=releasepass" >> keystore.properties
+            echo "keyAlias=releasekey" >> keystore.properties
+            echo "keyPassword=releasepass" >> keystore.properties
+          fi
 
       - name: Build Debug & Release
-        run: gradle assembleDebug assembleRelease --no-daemon
+        run: ./gradlew assembleDebug assembleRelease --no-daemon --stacktrace
+
