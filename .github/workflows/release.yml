@@ -32,13 +32,11 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
+          gradle-version: '9.3.1'
           cache-disabled: true
           generate-job-summary: false
-
-      - name: Make Gradle Wrapper Executable
-        run: chmod +x ./gradlew
 
       - name: Build Release APK & Bundle
         env:
@@ -46,7 +44,7 @@ jobs:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease bundleRelease --no-daemon
+        run: gradle assembleRelease bundleRelease --no-daemon
 
       - name: Prepare Release Artifacts
         run: |

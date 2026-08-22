@@ -21,13 +21,11 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
+          gradle-version: '9.3.1'
           cache-disabled: true
           generate-job-summary: false
 
-      - name: Make Gradle Wrapper Executable
-        run: chmod +x ./gradlew
-
       - name: Build Debug & Release
-        run: ./gradlew assembleDebug assembleRelease --no-daemon
+        run: gradle assembleDebug assembleRelease --no-daemon
