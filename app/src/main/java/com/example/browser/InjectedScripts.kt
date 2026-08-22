@@ -368,6 +368,29 @@ object InjectedScripts {
                     highlightBox.style.height = rect.height + 'px';
                 }
 
+                function getSelectorPath(element) {
+                    if (!element || element.nodeType !== 1) return "";
+                    var path = [];
+                    var curr = element;
+                    while (curr && curr.nodeType === 1) {
+                        var tag = curr.tagName.toLowerCase();
+                        if (curr.id) {
+                            tag += '#' + curr.id;
+                            path.unshift(tag);
+                            break;
+                        } else {
+                            var sib = curr, nth = 1;
+                            while (sib = sib.previousElementSibling) {
+                                if (sib.tagName === curr.tagName) nth++;
+                            }
+                            tag += ":nth-of-type(" + nth + ")";
+                        }
+                        path.unshift(tag);
+                        curr = curr.parentElement;
+                    }
+                    return path.join(" > ");
+                }
+
                 function onClick(e) {
                     e.preventDefault();
                     e.stopPropagation();
@@ -402,8 +425,9 @@ object InjectedScripts {
                         className: el.className || "",
                         attributes: attrMap,
                         computedStyles: styleMap,
-                        outerHtml: el.outerHTML ? el.outerHTML.substring(0, 2000) : "",
-                        innerHtml: el.innerHTML ? el.innerHTML.substring(0, 1000) : "",
+                        outerHtml: el.outerHTML ? el.outerHTML.substring(0, 10000) : "",
+                        innerHtml: el.innerHTML ? el.innerHTML.substring(0, 3000) : "",
+                        selectorPath: getSelectorPath(el),
                         width: Math.round(rect.width),
                         height: Math.round(rect.height),
                         top: Math.round(rect.top),
@@ -439,6 +463,29 @@ object InjectedScripts {
 
     val EXTRACT_DOM_TREE_JS = """
         (function() {
+            function getSelectorPath(element) {
+                if (!element || element.nodeType !== 1) return "";
+                var path = [];
+                var curr = element;
+                while (curr && curr.nodeType === 1) {
+                    var tag = curr.tagName.toLowerCase();
+                    if (curr.id) {
+                        tag += '#' + curr.id;
+                        path.unshift(tag);
+                        break;
+                    } else {
+                        var sib = curr, nth = 1;
+                        while (sib = sib.previousElementSibling) {
+                            if (sib.tagName === curr.tagName) nth++;
+                        }
+                        tag += ":nth-of-type(" + nth + ")";
+                    }
+                    path.unshift(tag);
+                    curr = curr.parentElement;
+                }
+                return path.join(" > ");
+            }
+
             function parseNode(node, depth, maxDepth) {
                 if (!node || depth > maxDepth) return null;
 
@@ -449,37 +496,41 @@ object InjectedScripts {
                         nodeId: "text_" + Math.random().toString(36).substr(2, 6),
                         tagName: "#text",
                         isTextNode: true,
-                        textContent: text.length > 80 ? text.substring(0, 80) + '...' : text,
+                        textContent: text.length > 300 ? text.substring(0, 300) + '...' : text,
                         attributes: {},
-                        children: []
+                        children: [],
+                        selectorPath: ""
                     };
                 }
 
-                if (node.nodeType !== 1) return null; // Only Element nodes
+                if (node.nodeType !== 1) return null; // Element nodes only
 
                 var tag = node.tagName.toLowerCase();
-                if (tag === 'script' || tag === 'style' || tag === 'svg' || tag === 'path') {
-                    // Summarize heavy tags
-                    return {
-                        nodeId: "el_" + tag + "_" + Math.random().toString(36).substr(2, 6),
-                        tagName: tag,
-                        isTextNode: false,
-                        textContent: "",
-                        attributes: { id: node.id || "", class: node.className || "" },
-                        children: []
-                    };
-                }
-
                 var attrs = {};
-                for (var i = 0; i < node.attributes.length; i++) {
-                    var a = node.attributes[i];
-                    attrs[a.name] = a.value;
+                if (node.attributes) {
+                    for (var i = 0; i < node.attributes.length; i++) {
+                        var a = node.attributes[i];
+                        attrs[a.name] = a.value;
+                    }
                 }
 
                 var childrenList = [];
-                var child = node.firstChild;
                 var childCount = 0;
-                while (child && childCount < 30) {
+
+                if (node.shadowRoot) {
+                    var shadowChild = node.shadowRoot.firstChild;
+                    while (shadowChild && childCount < 300) {
+                        var pShadow = parseNode(shadowChild, depth + 1, maxDepth);
+                        if (pShadow) {
+                            childrenList.push(pShadow);
+                            childCount++;
+                        }
+                        shadowChild = shadowChild.nextSibling;
+                    }
+                }
+
+                var child = node.firstChild;
+                while (child && childCount < 300) {
                     var parsed = parseNode(child, depth + 1, maxDepth);
                     if (parsed) {
                         childrenList.push(parsed);
@@ -494,11 +545,12 @@ object InjectedScripts {
                     isTextNode: false,
                     textContent: "",
                     attributes: attrs,
-                    children: childrenList
+                    children: childrenList,
+                    selectorPath: getSelectorPath(node)
                 };
             }
 
-            var tree = parseNode(document.documentElement, 0, 5);
+            var tree = parseNode(document.documentElement, 0, 30);
             if (window.AndroidDevTools && window.AndroidDevTools.onDomTreeExtracted) {
                 window.AndroidDevTools.onDomTreeExtracted(JSON.stringify(tree));
             }

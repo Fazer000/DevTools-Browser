@@ -68,8 +68,16 @@ data class DomNode(
     val textContent: String = "",
     val attributes: Map<String, String> = emptyMap(),
     val children: List<DomNode> = emptyList(),
-    val isExpanded: Boolean = false
-)
+    val isExpanded: Boolean = false,
+    val selectorPath: String = ""
+) {
+    fun containsSelector(targetPath: String): Boolean {
+        if (targetPath.isBlank()) return false
+        if (selectorPath.isNotBlank() && selectorPath == targetPath) return true
+        if (selectorPath.isNotBlank() && targetPath.startsWith(selectorPath)) return true
+        return children.any { it.containsSelector(targetPath) }
+    }
+}
 
 @Immutable
 data class CookieItem(

@@ -640,6 +640,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
                 computedStyles = styleMap,
                 outerHtml = obj.optString("outerHtml"),
                 innerHtml = obj.optString("innerHtml"),
+                selectorPath = obj.optString("selectorPath"),
                 width = obj.optDouble("width").toFloat(),
                 height = obj.optDouble("height").toFloat(),
                 top = obj.optDouble("top").toFloat(),
@@ -711,7 +712,8 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             isTextNode = obj.optBoolean("isTextNode"),
             textContent = obj.optString("textContent"),
             attributes = attrs,
-            children = children
+            children = children,
+            selectorPath = obj.optString("selectorPath")
         )
     }
 
