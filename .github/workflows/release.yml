@@ -29,19 +29,19 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-disabled: true
+          generate-job-summary: false
+
       - name: Build Release APK & Bundle
         env:
           KEYSTORE_PATH: ${{ secrets.KEYSTORE_PATH }}
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          if [ -f "./gradlew" ] && [ -s "./gradlew" ]; then
-            chmod +x gradlew
-            ./gradlew assembleRelease bundleRelease --no-daemon
-          else
-            gradle assembleRelease bundleRelease --no-daemon
-          fi
+        run: gradle assembleRelease bundleRelease --no-daemon
 
       - name: Prepare Release Artifacts
         run: |
