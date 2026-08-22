@@ -348,8 +348,8 @@ object InjectedScripts {
                     highlightBox.style.position = 'fixed';
                     highlightBox.style.pointerEvents = 'none';
                     highlightBox.style.border = '2px solid #38BDF8';
-                    highlightBox.style.backgroundColor = 'rgba(56, 189, 248, 0.2)';
-                    highlightBox.style.zIndex = '9999999';
+                    highlightBox.style.backgroundColor = 'rgba(56, 189, 248, 0.25)';
+                    highlightBox.style.zIndex = '2147483647';
                     highlightBox.style.transition = 'all 0.05s ease-out';
                     highlightBox.style.borderRadius = '2px';
                     highlightBox.style.boxShadow = '0 0 8px rgba(56, 189, 248, 0.6)';
@@ -358,15 +358,7 @@ object InjectedScripts {
                     highlightBox.style.display = 'block';
                 }
 
-                function onHover(e) {
-                    var el = e.target;
-                    if (el === highlightBox) return;
-                    var rect = el.getBoundingClientRect();
-                    highlightBox.style.top = rect.top + 'px';
-                    highlightBox.style.left = rect.left + 'px';
-                    highlightBox.style.width = rect.width + 'px';
-                    highlightBox.style.height = rect.height + 'px';
-                }
+                var lastX = 0, lastY = 0;
 
                 function getSelectorPath(element) {
                     if (!element || element.nodeType !== 1) return "";
@@ -374,10 +366,8 @@ object InjectedScripts {
                     var curr = element;
                     while (curr && curr.nodeType === 1) {
                         var tag = curr.tagName.toLowerCase();
-                        if (curr.id) {
+                        if (curr.id && typeof curr.id === 'string' && /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(curr.id)) {
                             tag += '#' + curr.id;
-                            path.unshift(tag);
-                            break;
                         } else {
                             var sib = curr, nth = 1;
                             while (sib = sib.previousElementSibling) {
@@ -386,16 +376,68 @@ object InjectedScripts {
                             tag += ":nth-of-type(" + nth + ")";
                         }
                         path.unshift(tag);
+                        if (curr.tagName && curr.tagName.toLowerCase() === 'html') break;
                         curr = curr.parentElement;
                     }
                     return path.join(" > ");
                 }
 
+                function highlightElement(el) {
+                    if (!el || el === highlightBox || el === document.documentElement) return;
+                    if (el.nodeType === 3) el = el.parentElement;
+                    if (!el || el.nodeType !== 1) return;
+                    var rect = el.getBoundingClientRect();
+                    highlightBox.style.top = rect.top + 'px';
+                    highlightBox.style.left = rect.left + 'px';
+                    highlightBox.style.width = rect.width + 'px';
+                    highlightBox.style.height = rect.height + 'px';
+                }
+
+                function getTargetEl(e) {
+                    var x = lastX, y = lastY;
+                    if (e.changedTouches && e.changedTouches.length > 0) {
+                        x = e.changedTouches[0].clientX;
+                        y = e.changedTouches[0].clientY;
+                    } else if (e.touches && e.touches.length > 0) {
+                        x = e.touches[0].clientX;
+                        y = e.touches[0].clientY;
+                    } else if (e.clientX || e.clientY) {
+                        x = e.clientX;
+                        y = e.clientY;
+                    }
+                    if (x || y) {
+                        lastX = x;
+                        lastY = y;
+                        var elAtPoint = document.elementFromPoint(x, y);
+                        if (elAtPoint && elAtPoint !== highlightBox) return elAtPoint;
+                    }
+                    return e.target;
+                }
+
+                function onTouchStart(e) {
+                    var el = getTargetEl(e);
+                    highlightElement(el);
+                }
+
+                function onTouchMove(e) {
+                    var el = getTargetEl(e);
+                    highlightElement(el);
+                }
+
+                function onHover(e) {
+                    var el = getTargetEl(e);
+                    highlightElement(el);
+                }
+
                 function onClick(e) {
                     e.preventDefault();
                     e.stopPropagation();
-                    var el = e.target;
-                    if (el === highlightBox) return;
+                    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+
+                    var el = getTargetEl(e);
+                    if (!el || el === highlightBox) return;
+                    if (el.nodeType === 3) el = el.parentElement;
+                    if (!el || el.nodeType !== 1) return;
 
                     var rect = el.getBoundingClientRect();
                     var computed = window.getComputedStyle(el);
@@ -414,9 +456,11 @@ object InjectedScripts {
                     };
 
                     var attrMap = {};
-                    for (var i = 0; i < el.attributes.length; i++) {
-                        var attr = el.attributes[i];
-                        attrMap[attr.name] = attr.value;
+                    if (el.attributes) {
+                        for (var i = 0; i < el.attributes.length; i++) {
+                            var attr = el.attributes[i];
+                            attrMap[attr.name] = attr.value;
+                        }
                     }
 
                     var data = {
@@ -440,11 +484,17 @@ object InjectedScripts {
                 }
 
                 document.addEventListener('mouseover', onHover, true);
+                document.addEventListener('touchstart', onTouchStart, { passive: false, capture: true });
+                document.addEventListener('touchmove', onTouchMove, { passive: false, capture: true });
+                document.addEventListener('touchend', onClick, { passive: false, capture: true });
                 document.addEventListener('click', onClick, true);
 
                 window.__disableDevToolsInspector = function() {
                     window.__devToolsInspectorActive = false;
                     document.removeEventListener('mouseover', onHover, true);
+                    document.removeEventListener('touchstart', onTouchStart, { passive: false, capture: true });
+                    document.removeEventListener('touchmove', onTouchMove, { passive: false, capture: true });
+                    document.removeEventListener('touchend', onClick, { passive: false, capture: true });
                     document.removeEventListener('click', onClick, true);
                     if (highlightBox) highlightBox.style.display = 'none';
                 };
@@ -469,10 +519,8 @@ object InjectedScripts {
                 var curr = element;
                 while (curr && curr.nodeType === 1) {
                     var tag = curr.tagName.toLowerCase();
-                    if (curr.id) {
+                    if (curr.id && typeof curr.id === 'string' && /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(curr.id)) {
                         tag += '#' + curr.id;
-                        path.unshift(tag);
-                        break;
                     } else {
                         var sib = curr, nth = 1;
                         while (sib = sib.previousElementSibling) {
@@ -481,6 +529,7 @@ object InjectedScripts {
                         tag += ":nth-of-type(" + nth + ")";
                     }
                     path.unshift(tag);
+                    if (curr.tagName && curr.tagName.toLowerCase() === 'html') break;
                     curr = curr.parentElement;
                 }
                 return path.join(" > ");
