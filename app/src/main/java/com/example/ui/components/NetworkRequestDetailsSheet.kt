@@ -5,7 +5,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
@@ -194,75 +197,71 @@ fun NetworkRequestDetailsSheet(
 
 @Composable
 private fun HeadersTabContent(request: NetworkRequest, onCopy: (String, String) -> Unit) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        item {
-            HeaderSectionTitle("General Information")
-            HeaderInfoRow("Request URL", request.url)
-            HeaderInfoRow("Request Method", request.method)
-            HeaderInfoRow("Status Code", "${request.statusCode} ${request.statusText}")
-            HeaderInfoRow("Initiator", request.initiator)
-            HeaderInfoRow("Duration", "${request.durationMs} ms")
-            HeaderInfoRow("Size", if (request.sizeBytes > 0) "${request.sizeBytes} Bytes" else "Unknown")
-        }
+        HeaderSectionTitle("General Information")
+        HeaderInfoRow("Request URL", request.url)
+        HeaderInfoRow("Request Method", request.method)
+        HeaderInfoRow("Status Code", "${request.statusCode} ${request.statusText}")
+        HeaderInfoRow("Initiator", request.initiator)
+        HeaderInfoRow("Duration", "${request.durationMs} ms")
+        HeaderInfoRow("Size", if (request.sizeBytes > 0) "${request.sizeBytes} Bytes" else "Unknown")
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                HeaderSectionTitle("Response Headers (${request.responseHeaders.size})")
-                if (request.responseHeaders.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            val str = request.responseHeaders.entries.joinToString("\n") { "${it.key}: ${it.value}" }
-                            onCopy(str, "Response Headers")
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Response Headers", modifier = Modifier.size(16.dp))
-                    }
-                }
-            }
-
-            if (request.responseHeaders.isEmpty()) {
-                Text("[No response headers recorded]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                request.responseHeaders.forEach { (k, v) ->
-                    HeaderKeyValueRow(key = k, value = v)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            HeaderSectionTitle("Response Headers (${request.responseHeaders.size})")
+            if (request.responseHeaders.isNotEmpty()) {
+                IconButton(
+                    onClick = {
+                        val str = request.responseHeaders.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                        onCopy(str, "Response Headers")
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Response Headers", modifier = Modifier.size(16.dp))
                 }
             }
         }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                HeaderSectionTitle("Request Headers (${request.requestHeaders.size})")
-                if (request.requestHeaders.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            val str = request.requestHeaders.entries.joinToString("\n") { "${it.key}: ${it.value}" }
-                            onCopy(str, "Request Headers")
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Request Headers", modifier = Modifier.size(16.dp))
-                    }
+        if (request.responseHeaders.isEmpty()) {
+            Text("[No response headers recorded]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            request.responseHeaders.forEach { (k, v) ->
+                HeaderKeyValueRow(key = k, value = v)
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            HeaderSectionTitle("Request Headers (${request.requestHeaders.size})")
+            if (request.requestHeaders.isNotEmpty()) {
+                IconButton(
+                    onClick = {
+                        val str = request.requestHeaders.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                        onCopy(str, "Request Headers")
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Request Headers", modifier = Modifier.size(16.dp))
                 }
             }
+        }
 
-            if (request.requestHeaders.isEmpty()) {
-                Text("[No request headers recorded]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                request.requestHeaders.forEach { (k, v) ->
-                    HeaderKeyValueRow(key = k, value = v)
-                }
+        if (request.requestHeaders.isEmpty()) {
+            Text("[No request headers recorded]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            request.requestHeaders.forEach { (k, v) ->
+                HeaderKeyValueRow(key = k, value = v)
             }
         }
     }
@@ -270,57 +269,55 @@ private fun HeadersTabContent(request: NetworkRequest, onCopy: (String, String) 
 
 @Composable
 private fun PayloadTabContent(request: NetworkRequest, onCopy: (String, String) -> Unit) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (request.queryParams.isNotEmpty()) {
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    HeaderSectionTitle("Query String Parameters (${request.queryParams.size})")
-                    IconButton(
-                        onClick = {
-                            val str = request.queryParams.entries.joinToString("\n") { "${it.key}: ${it.value}" }
-                            onCopy(str, "Query Parameters")
-                        },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Query Parameters", modifier = Modifier.size(16.dp))
-                    }
-                }
-
-                request.queryParams.forEach { (k, v) ->
-                    HeaderKeyValueRow(key = k, value = v)
-                }
-            }
-        }
-
-        item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                HeaderSectionTitle("Request Body")
-                if (request.requestBody.isNotBlank()) {
-                    IconButton(
-                        onClick = { onCopy(request.requestBody, "Request Body") },
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Copy Request Body", modifier = Modifier.size(16.dp))
-                    }
+                HeaderSectionTitle("Query String Parameters (${request.queryParams.size})")
+                IconButton(
+                    onClick = {
+                        val str = request.queryParams.entries.joinToString("\n") { "${it.key}: ${it.value}" }
+                        onCopy(str, "Query Parameters")
+                    },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Query Parameters", modifier = Modifier.size(16.dp))
                 }
             }
 
-            if (request.requestBody.isBlank()) {
-                Text("[No Request Body]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                CodeBlock(request.requestBody)
+            request.queryParams.forEach { (k, v) ->
+                HeaderKeyValueRow(key = k, value = v)
             }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            HeaderSectionTitle("Request Body")
+            if (request.requestBody.isNotBlank()) {
+                IconButton(
+                    onClick = { onCopy(request.requestBody, "Request Body") },
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy Request Body", modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+
+        if (request.requestBody.isBlank()) {
+            Text("[No Request Body]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            CodeBlock(content = request.requestBody, scrollable = false)
         }
     }
 }
@@ -328,14 +325,17 @@ private fun PayloadTabContent(request: NetworkRequest, onCopy: (String, String) 
 @Composable
 private fun PreviewTabContent(request: NetworkRequest) {
     val body = request.responseBody
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        item {
-            HeaderSectionTitle("Response Preview")
-            if (body.isBlank()) {
-                Text("[No Preview Available]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                CodeBlock(body)
-            }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        HeaderSectionTitle("Response Preview")
+        Spacer(modifier = Modifier.height(4.dp))
+        if (body.isBlank()) {
+            Text("[No Preview Available]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            CodeBlock(content = body, scrollable = false)
         }
     }
 }
@@ -368,7 +368,7 @@ private fun ResponseTabContent(request: NetworkRequest, onCopy: (String, String)
         if (body.isBlank()) {
             Text("[Empty Response Body]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            CodeBlock(body, modifier = Modifier.weight(1f))
+            CodeBlock(content = body, modifier = Modifier.weight(1f), scrollable = true)
         }
     }
 }
@@ -430,7 +430,9 @@ private fun WsMessagesTabContent(request: NetworkRequest) {
 @Composable
 private fun TimingTabContent(request: NetworkRequest) {
     Column(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         HeaderSectionTitle("Request Duration & Timing")
@@ -521,7 +523,11 @@ private fun HeaderKeyValueRow(key: String, value: String) {
 }
 
 @Composable
-private fun CodeBlock(content: String, modifier: Modifier = Modifier) {
+private fun CodeBlock(
+    content: String,
+    modifier: Modifier = Modifier,
+    scrollable: Boolean = false
+) {
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
         shape = RoundedCornerShape(6.dp),
@@ -529,8 +535,13 @@ private fun CodeBlock(content: String, modifier: Modifier = Modifier) {
             .fillMaxWidth()
             .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
     ) {
-        LazyColumn(modifier = Modifier.padding(8.dp)) {
-            item {
+        val scrollModifier = if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier
+        Box(
+            modifier = Modifier
+                .padding(8.dp)
+                .then(scrollModifier)
+        ) {
+            SelectionContainer {
                 Text(
                     text = content,
                     fontFamily = FontFamily.Monospace,

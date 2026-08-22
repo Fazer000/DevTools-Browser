@@ -52,29 +52,27 @@ fun DevToolsPanel(
     ) {
         // Draggable Resizer Splitter Bar
         var isDragging by remember { mutableStateOf(false) }
-        val devToolsHeightFraction by viewModel.devToolsHeightFraction.collectAsState()
-        var localFraction by remember(devToolsHeightFraction) { mutableFloatStateOf(devToolsHeightFraction) }
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(24.dp)
                 .background(if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
-                .pointerInput(Unit) {
+                .pointerInput(totalHeightPx) {
                     detectDragGestures(
                         onDragStart = { isDragging = true },
                         onDragEnd = {
                             isDragging = false
-                            viewModel.updateDevToolsHeight(localFraction)
+                            viewModel.saveDevToolsHeight(viewModel.devToolsHeightFraction.value)
                         },
                         onDragCancel = { isDragging = false },
                         onDrag = { change, dragAmount ->
                             change.consume()
                             if (totalHeightPx > 0) {
                                 val deltaFraction = -dragAmount.y / totalHeightPx
-                                val newFraction = (localFraction + deltaFraction).coerceIn(0.15f, 0.85f)
-                                localFraction = newFraction
-                                viewModel.updateDevToolsHeight(newFraction)
+                                val currentFraction = viewModel.devToolsHeightFraction.value
+                                val newFraction = (currentFraction + deltaFraction).coerceIn(0.15f, 0.85f)
+                                viewModel.setDevToolsHeightInMemory(newFraction)
                             }
                         }
                     )

@@ -157,7 +157,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             }
         }
         viewModelScope.launch {
-            repository.devToolsHeightFlow.collect { height ->
+            repository.devToolsHeightFlow.first().let { height ->
                 _devToolsHeightFraction.value = height
             }
         }
@@ -227,10 +227,18 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { repository.saveDevToolsVisible(newVisible) }
     }
 
-    fun updateDevToolsHeight(fraction: Float) {
+    fun setDevToolsHeightInMemory(fraction: Float) {
+        _devToolsHeightFraction.value = fraction.coerceIn(0.15f, 0.85f)
+    }
+
+    fun saveDevToolsHeight(fraction: Float) {
         val coerced = fraction.coerceIn(0.15f, 0.85f)
         _devToolsHeightFraction.value = coerced
         viewModelScope.launch { repository.saveDevToolsHeight(coerced) }
+    }
+
+    fun updateDevToolsHeight(fraction: Float) {
+        saveDevToolsHeight(fraction)
     }
 
     fun setDevToolsTab(tab: DevToolsTab) {
@@ -507,10 +515,28 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             )
 
             viewModelScope.launch(Dispatchers.Main) {
-                val current = _networkRequests.value
-                // Deduplicate if already recorded with same URL and type within last second
-                val updated = listOf(req) + current.filterNot { it.url == req.url && it.type == req.type && (req.timestamp - it.timestamp) < 1000 }
-                _networkRequests.value = updated.take(150)
+                val current = _networkRequests.value.toMutableList()
+                // Find if there is a placeholder native request for same URL within last 3 seconds
+                val placeholderIndex = current.indexOfFirst {
+                    it.url == req.url &&
+                            (it.responseBody.startsWith("[Fetch/XHR") && !req.responseBody.startsWith("[Fetch/XHR"))
+                }
+
+                if (placeholderIndex != -1) {
+                    // Upgrade placeholder to detailed JS request
+                    current[placeholderIndex] = req
+                } else {
+                    // Check if exact same request was logged within last 100ms
+                    val duplicateIndex = current.indexOfFirst {
+                        it.url == req.url && it.method == req.method && Math.abs(req.timestamp - it.timestamp) < 100
+                    }
+                    if (duplicateIndex != -1 && req.responseBody.isNotBlank() && current[duplicateIndex].responseBody.isBlank()) {
+                        current[duplicateIndex] = req
+                    } else if (duplicateIndex == -1) {
+                        current.add(0, req)
+                    }
+                }
+                _networkRequests.value = current.take(200)
             }
         } catch (e: Exception) {
             e.printStackTrace()

@@ -100,6 +100,15 @@ fun WebViewContainer(
                     override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                         super.onPageStarted(view, url, favicon)
                         url?.let { viewModel.onPageStarted(it) }
+                        // Inject scripts at page start to intercept early network requests
+                        view?.evaluateJavascript(InjectedScripts.CONSOLE_OVERRIDE_SCRIPT, null)
+                        view?.evaluateJavascript(InjectedScripts.NETWORK_OVERRIDE_SCRIPT, null)
+                    }
+
+                    override fun onLoadResource(view: WebView?, url: String?) {
+                        super.onLoadResource(view, url)
+                        // Re-evaluate JS to catch dynamically loaded frames/scripts
+                        view?.evaluateJavascript(InjectedScripts.NETWORK_OVERRIDE_SCRIPT, null)
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {
@@ -143,8 +152,21 @@ fun WebViewContainer(
                                 val headersMap = request.requestHeaders ?: emptyMap()
                                 val method = request.method ?: "GET"
 
+                                val acceptHeader = headersMap["Accept"] ?: headersMap["accept"] ?: ""
+                                val xReqWith = headersMap["X-Requested-With"] ?: headersMap["x-requested-with"] ?: ""
+                                val secFetchMode = headersMap["Sec-Fetch-Mode"] ?: headersMap["sec-fetch-mode"] ?: ""
+                                val dest = headersMap["Sec-Fetch-Dest"] ?: headersMap["sec-fetch-dest"] ?: ""
+
+                                val isFetchOrXhr = xReqWith.equals("XMLHttpRequest", ignoreCase = true) ||
+                                        (dest.equals("empty", ignoreCase = true) && !isMainFrame) ||
+                                        secFetchMode.contains("cors", ignoreCase = true) ||
+                                        acceptHeader.contains("json", ignoreCase = true) ||
+                                        url.contains("/api/", ignoreCase = true) ||
+                                        url.contains("graphql", ignoreCase = true)
+
                                 val type = when {
                                     isMainFrame -> "doc"
+                                    isFetchOrXhr -> "fetch"
                                     url.endsWith(".js") || url.contains(".js?") -> "js"
                                     url.endsWith(".css") || url.contains(".css?") -> "css"
                                     url.contains(".png") || url.contains(".jpg") || url.contains(".jpeg") || url.contains(".gif") || url.contains(".svg") || url.contains(".webp") || url.contains(".ico") -> "img"
@@ -153,19 +175,19 @@ fun WebViewContainer(
                                     else -> "other"
                                 }
 
-                                if (isMainFrame || type == "doc" || type == "media") {
+                                if (isMainFrame || isFetchOrXhr || type == "doc" || type == "media") {
                                     val json = org.json.JSONObject().apply {
                                         put("url", url)
                                         put("method", method)
                                         put("statusCode", 200)
                                         put("statusText", "OK")
-                                        put("type", type)
+                                        put("type", if (isFetchOrXhr) "fetch" else type)
                                         put("durationMs", 0)
                                         put("sizeBytes", 0)
-                                        put("initiator", if (isMainFrame) "MainFrame" else "WebView Engine")
+                                        put("initiator", if (isMainFrame) "MainFrame" else if (isFetchOrXhr) "Fetch/XHR Engine" else "WebView Engine")
                                         put("requestHeaders", org.json.JSONObject(headersMap))
                                         put("responseHeaders", org.json.JSONObject())
-                                        put("responseBody", "[Native WebView Resource]")
+                                        put("responseBody", if (isFetchOrXhr) "[Fetch/XHR Request]" else "[Native WebView Resource]")
                                     }.toString()
                                     viewModel.onNetworkRequestJsonReceived(json)
                                 }
