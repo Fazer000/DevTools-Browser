@@ -166,6 +166,15 @@ fun DevicesSettingsTab(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("⚠️ No APK asset attached to this release tag.", fontSize = 10.sp, color = MaterialTheme.colorScheme.error)
                     }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "💡 Если при установке появляется ошибка \"Конфликт пакетов\": удалите ранее установленную версию приложения DevTools Browser с устройства перед установкой нового APK (из-за различия цифровых подписей сборок).",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
