@@ -8,6 +8,8 @@ interface DevToolsBridgeListener {
         url: String, method: String, statusCode: Int, type: String, durationMs: Long,
         reqHeaders: String, reqBody: String, resHeaders: String, resBody: String
     )
+    fun onNetworkRequestJsonReceived(jsonString: String)
+    fun onWebSocketFrameReceived(wsUrl: String, direction: String, payload: String)
     fun onElementInspectedReceived(jsonString: String)
     fun onDomTreeExtractedReceived(jsonString: String)
     fun onStorageExtractedReceived(localStorageJson: String, sessionStorageJson: String, cookieString: String)
@@ -28,6 +30,16 @@ class DevToolsBridge(private val listener: DevToolsBridgeListener) {
         listener.onNetworkRequestReceived(
             url, method, statusCode, type, durationMs, reqHeaders, reqBody, resHeaders, resBody
         )
+    }
+
+    @JavascriptInterface
+    fun onNetworkRequestJson(jsonString: String) {
+        listener.onNetworkRequestJsonReceived(jsonString)
+    }
+
+    @JavascriptInterface
+    fun onWebSocketFrame(wsUrl: String, direction: String, payload: String) {
+        listener.onWebSocketFrameReceived(wsUrl, direction, payload)
     }
 
     @JavascriptInterface

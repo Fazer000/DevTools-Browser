@@ -17,17 +17,30 @@ data class ConsoleLog(
 )
 
 @Immutable
+data class WsFrame(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val direction: String, // "sent" or "received"
+    val payload: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+@Immutable
 data class NetworkRequest(
     val id: String = java.util.UUID.randomUUID().toString(),
     val url: String,
     val method: String = "GET",
     val statusCode: Int = 200,
-    val type: String = "fetch", // fetch, xhr, doc, script, stylesheet, image, font, other
+    val statusText: String = "OK",
+    val type: String = "fetch", // fetch, xhr, js, css, img, media, font, doc, ws, other
     val durationMs: Long = 0,
-    val requestHeaders: String = "{}",
+    val sizeBytes: Long = 0,
+    val initiator: String = "Parser",
+    val requestHeaders: Map<String, String> = emptyMap(),
     val requestBody: String = "",
-    val responseHeaders: String = "{}",
+    val responseHeaders: Map<String, String> = emptyMap(),
     val responseBody: String = "",
+    val queryParams: Map<String, String> = emptyMap(),
+    val wsFrames: List<WsFrame> = emptyList(),
     val timestamp: Long = System.currentTimeMillis()
 )
 

@@ -53,84 +53,284 @@ object InjectedScripts {
             if (window.__devToolsNetInjected) return;
             window.__devToolsNetInjected = true;
 
+            function sendNetJson(data) {
+                try {
+                    if (window.AndroidDevTools && window.AndroidDevTools.onNetworkRequestJson) {
+                        window.AndroidDevTools.onNetworkRequestJson(JSON.stringify(data));
+                    }
+                } catch(e) {}
+            }
+
+            function parseHeaders(headersObj) {
+                var res = {};
+                if (!headersObj) return res;
+                if (typeof headersObj.forEach === 'function') {
+                    try { headersObj.forEach(function(val, key) { res[key] = val; }); } catch(e) {}
+                } else if (typeof headersObj === 'object') {
+                    for (var k in headersObj) {
+                        try { res[k] = String(headersObj[k]); } catch(e) {}
+                    }
+                }
+                return res;
+            }
+
+            // 1. Fetch Interceptor
             var origFetch = window.fetch;
             if (origFetch) {
                 window.fetch = function() {
                     var args = arguments;
-                    var url = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url ? args[0].url : 'Fetch');
-                    var method = (args[1] && args[1].method) ? args[1].method : 'GET';
-                    var reqBody = (args[1] && args[1].body) ? String(args[1].body) : '';
+                    var input = args[0];
+                    var init = args[1] || {};
+                    var url = typeof input === 'string' ? input : (input && input.url ? input.url : 'Fetch');
+                    var method = (init.method || (input && input.method) || 'GET').toUpperCase();
+                    var reqBody = init.body ? String(init.body) : '';
+                    var reqHeaders = parseHeaders(init.headers || (input && input.headers));
                     var startTime = Date.now();
 
                     return origFetch.apply(this, args).then(function(response) {
                         var duration = Date.now() - startTime;
                         var status = response.status;
+                        var statusText = response.statusText || (status === 200 ? 'OK' : 'HTTP ' + status);
                         var clone = response.clone();
-                        var resHeaders = {};
-                        try {
-                            clone.headers.forEach(function(val, key) { resHeaders[key] = val; });
-                        } catch(e) {}
+                        var resHeaders = parseHeaders(clone.headers);
 
                         clone.text().then(function(bodyText) {
-                            if (window.AndroidDevTools && window.AndroidDevTools.onNetworkRequest) {
-                                window.AndroidDevTools.onNetworkRequest(
-                                    url, method, status, 'fetch', duration,
-                                    '{}', reqBody, JSON.stringify(resHeaders), bodyText.substring(0, 4000)
-                                );
-                            }
+                            sendNetJson({
+                                url: url,
+                                method: method,
+                                statusCode: status,
+                                statusText: statusText,
+                                type: 'fetch',
+                                durationMs: duration,
+                                sizeBytes: bodyText ? bodyText.length : 0,
+                                initiator: 'fetch()',
+                                requestHeaders: reqHeaders,
+                                requestBody: reqBody,
+                                responseHeaders: resHeaders,
+                                responseBody: bodyText.substring(0, 100000)
+                            });
                         }).catch(function() {
-                            if (window.AndroidDevTools && window.AndroidDevTools.onNetworkRequest) {
-                                window.AndroidDevTools.onNetworkRequest(
-                                    url, method, status, 'fetch', duration,
-                                    '{}', reqBody, JSON.stringify(resHeaders), '[Binary or Stream response]'
-                                );
-                            }
+                            sendNetJson({
+                                url: url,
+                                method: method,
+                                statusCode: status,
+                                statusText: statusText,
+                                type: 'fetch',
+                                durationMs: duration,
+                                sizeBytes: 0,
+                                initiator: 'fetch()',
+                                requestHeaders: reqHeaders,
+                                requestBody: reqBody,
+                                responseHeaders: resHeaders,
+                                responseBody: '[Binary or Stream response]'
+                            });
                         });
 
                         return response;
                     }).catch(function(err) {
                         var duration = Date.now() - startTime;
-                        if (window.AndroidDevTools && window.AndroidDevTools.onNetworkRequest) {
-                            window.AndroidDevTools.onNetworkRequest(
-                                url, method, 0, 'fetch', duration,
-                                '{}', reqBody, '{}', 'Network Request Failed: ' + (err.message || 'Error')
-                            );
-                        }
+                        sendNetJson({
+                            url: url,
+                            method: method,
+                            statusCode: 0,
+                            statusText: 'Failed',
+                            type: 'fetch',
+                            durationMs: duration,
+                            sizeBytes: 0,
+                            initiator: 'fetch()',
+                            requestHeaders: reqHeaders,
+                            requestBody: reqBody,
+                            responseHeaders: {},
+                            responseBody: 'Fetch Error: ' + (err.message || 'Network Failed')
+                        });
                         throw err;
                     });
                 };
             }
 
+            // 2. XMLHttpRequest Interceptor
             var origOpen = XMLHttpRequest.prototype.open;
+            var origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
             var origSend = XMLHttpRequest.prototype.send;
+
             XMLHttpRequest.prototype.open = function(method, url) {
                 this._url = url;
-                this._method = method;
+                this._method = (method || 'GET').toUpperCase();
                 this._startTime = Date.now();
+                this._reqHeaders = {};
                 return origOpen.apply(this, arguments);
             };
+
+            XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+                if (!this._reqHeaders) this._reqHeaders = {};
+                this._reqHeaders[header] = value;
+                return origSetHeader.apply(this, arguments);
+            };
+
             XMLHttpRequest.prototype.send = function(body) {
                 var xhr = this;
+                var reqBodyStr = body ? String(body) : '';
+
                 this.addEventListener('load', function() {
                     var duration = Date.now() - (xhr._startTime || Date.now());
-                    if (window.AndroidDevTools && window.AndroidDevTools.onNetworkRequest) {
-                        window.AndroidDevTools.onNetworkRequest(
-                            xhr._url || 'XHR', xhr._method || 'GET', xhr.status, 'xhr', duration,
-                            '{}', body ? String(body) : '', xhr.getAllResponseHeaders() || '{}',
-                            (xhr.responseText || '').substring(0, 4000)
-                        );
-                    }
+                    var rawResHeaders = xhr.getAllResponseHeaders() || '';
+                    var parsedResHeaders = {};
+                    rawResHeaders.split('\r\n').forEach(function(line) {
+                        var parts = line.split(': ');
+                        if (parts.length > 1) parsedResHeaders[parts[0].trim()] = parts.slice(1).join(': ').trim();
+                    });
+
+                    sendNetJson({
+                        url: xhr._url || 'XHR',
+                        method: xhr._method || 'GET',
+                        statusCode: xhr.status,
+                        statusText: xhr.statusText || (xhr.status === 200 ? 'OK' : 'XHR ' + xhr.status),
+                        type: 'xhr',
+                        durationMs: duration,
+                        sizeBytes: (xhr.responseText || '').length,
+                        initiator: 'XMLHttpRequest',
+                        requestHeaders: xhr._reqHeaders || {},
+                        requestBody: reqBodyStr,
+                        responseHeaders: parsedResHeaders,
+                        responseBody: (xhr.responseText || '').substring(0, 100000)
+                    });
                 });
+
                 this.addEventListener('error', function() {
-                    if (window.AndroidDevTools && window.AndroidDevTools.onNetworkRequest) {
-                        window.AndroidDevTools.onNetworkRequest(
-                            xhr._url || 'XHR', xhr._method || 'GET', 0, 'xhr', 0,
-                            '{}', body ? String(body) : '', '{}', 'XHR Error'
-                        );
-                    }
+                    sendNetJson({
+                        url: xhr._url || 'XHR',
+                        method: xhr._method || 'GET',
+                        statusCode: 0,
+                        statusText: 'Failed',
+                        type: 'xhr',
+                        durationMs: Date.now() - (xhr._startTime || Date.now()),
+                        sizeBytes: 0,
+                        initiator: 'XMLHttpRequest',
+                        requestHeaders: xhr._reqHeaders || {},
+                        requestBody: reqBodyStr,
+                        responseHeaders: {},
+                        responseBody: 'XHR Network Error'
+                    });
                 });
+
                 return origSend.apply(this, arguments);
             };
+
+            // 3. WebSocket Interceptor
+            var OrigWebSocket = window.WebSocket;
+            if (OrigWebSocket) {
+                window.WebSocket = function(url, protocols) {
+                    var ws = protocols ? new OrigWebSocket(url, protocols) : new OrigWebSocket(url);
+                    var fullUrl = typeof url === 'string' ? url : String(url);
+
+                    sendNetJson({
+                        url: fullUrl,
+                        method: 'GET',
+                        statusCode: 101,
+                        statusText: 'Switching Protocols',
+                        type: 'ws',
+                        durationMs: 0,
+                        sizeBytes: 0,
+                        initiator: 'WebSocket',
+                        requestHeaders: { 'Upgrade': 'websocket', 'Connection': 'Upgrade' },
+                        requestBody: '',
+                        responseHeaders: { 'HTTP/1.1': '101 Switching Protocols' },
+                        responseBody: 'WebSocket Connection Established'
+                    });
+
+                    var origWsSend = ws.send;
+                    ws.send = function(data) {
+                        try {
+                            if (window.AndroidDevTools && window.AndroidDevTools.onWebSocketFrame) {
+                                window.AndroidDevTools.onWebSocketFrame(fullUrl, 'sent', String(data));
+                            }
+                        } catch(e) {}
+                        return origWsSend.apply(this, arguments);
+                    };
+
+                    ws.addEventListener('message', function(evt) {
+                        try {
+                            if (window.AndroidDevTools && window.AndroidDevTools.onWebSocketFrame) {
+                                window.AndroidDevTools.onWebSocketFrame(fullUrl, 'received', String(evt.data));
+                            }
+                        } catch(e) {}
+                    });
+
+                    return ws;
+                };
+                window.WebSocket.prototype = OrigWebSocket.prototype;
+            }
+
+            // 4. PerformanceObserver for Subresources (JS, CSS, Image, Media, Font, Doc)
+            try {
+                if (window.PerformanceObserver) {
+                    var reportedUrls = {};
+                    var observer = new PerformanceObserver(function(list) {
+                        var entries = list.getEntries();
+                        for (var i = 0; i < entries.length; i++) {
+                            var entry = entries[i];
+                            var entryUrl = entry.name;
+                            if (!entryUrl || entryUrl.startsWith('data:') || reportedUrls[entryUrl]) continue;
+
+                            var initType = entry.initiatorType || 'other';
+                            if (initType === 'fetch' || initType === 'xmlhttprequest') continue; // Already intercepted
+
+                            reportedUrls[entryUrl] = true;
+
+                            var category = 'other';
+                            if (initType === 'script' || entryUrl.endsWith('.js')) category = 'js';
+                            else if (initType === 'css' || initType === 'link' || entryUrl.endsWith('.css')) category = 'css';
+                            else if (initType === 'img' || entryUrl.match(/\.(png|jpg|jpeg|gif|svg|webp|ico)/i)) category = 'img';
+                            else if (initType === 'media' || initType === 'video' || initType === 'audio' || entryUrl.match(/\.(mp4|webm|mp3|ogg|wav|m3u8|ts)/i)) category = 'media';
+                            else if (initType === 'font' || entryUrl.match(/\.(woff|woff2|ttf|otf|eot)/i)) category = 'font';
+                            else if (initType === 'iframe' || initType === 'navigation') category = 'doc';
+
+                            sendNetJson({
+                                url: entryUrl,
+                                method: 'GET',
+                                statusCode: 200,
+                                statusText: 'OK',
+                                type: category,
+                                durationMs: Math.round(entry.duration || 0),
+                                sizeBytes: entry.transferSize || entry.encodedBodySize || 0,
+                                initiator: initType,
+                                requestHeaders: { 'Accept': '*/*' },
+                                requestBody: '',
+                                responseHeaders: { 'Content-Type': initType },
+                                responseBody: '[Resource loaded by browser]'
+                            });
+                        }
+                    });
+                    observer.observe({ entryTypes: ['resource'] });
+                }
+            } catch(e) {}
+
+            // 5. Media elements (<video>, <audio>) detection
+            function observeMediaElements() {
+                var mediaEls = document.querySelectorAll('video, audio, source');
+                for (var j = 0; j < mediaEls.length; j++) {
+                    var m = mediaEls[j];
+                    var mediaUrl = m.src || m.currentSrc;
+                    if (mediaUrl && !mediaUrl.startsWith('data:')) {
+                        sendNetJson({
+                            url: mediaUrl,
+                            method: 'GET',
+                            statusCode: 200,
+                            statusText: 'OK (Media)',
+                            type: 'media',
+                            durationMs: 0,
+                            sizeBytes: 0,
+                            initiator: m.tagName.toLowerCase(),
+                            requestHeaders: { 'Range': 'bytes=0-' },
+                            requestBody: '',
+                            responseHeaders: { 'Accept-Ranges': 'bytes' },
+                            responseBody: '[Media Stream / Source]'
+                        });
+                    }
+                }
+            }
+            document.addEventListener('DOMContentLoaded', observeMediaElements);
+            setTimeout(observeMediaElements, 2000);
         })();
     """.trimIndent()
 

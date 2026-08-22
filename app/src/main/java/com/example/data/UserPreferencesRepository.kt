@@ -26,6 +26,11 @@ class UserPreferencesRepository(private val context: Context) {
         private val KEY_HISTORY = stringPreferencesKey("history_json")
         private val KEY_JS_ENABLED = booleanPreferencesKey("js_enabled")
         private val KEY_CACHE_ENABLED = booleanPreferencesKey("cache_enabled")
+        private val KEY_NET_SEARCH_QUERY = stringPreferencesKey("net_search_query")
+        private val KEY_NET_EXCLUDE_QUERY = stringPreferencesKey("net_exclude_query")
+        private val KEY_NET_FILTER_TYPE = stringPreferencesKey("net_filter_type")
+        private val KEY_NET_SEARCH_BODY = booleanPreferencesKey("net_search_body")
+        private val KEY_NET_REGEX_MODE = booleanPreferencesKey("net_regex_mode")
     }
 
     val lastUrlFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -55,6 +60,26 @@ class UserPreferencesRepository(private val context: Context) {
 
     val cacheEnabledFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_CACHE_ENABLED] ?: true
+    }
+
+    val netSearchQueryFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_NET_SEARCH_QUERY] ?: ""
+    }
+
+    val netExcludeQueryFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_NET_EXCLUDE_QUERY] ?: ""
+    }
+
+    val netFilterTypeFlow: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_NET_FILTER_TYPE]
+    }
+
+    val netSearchBodyFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_NET_SEARCH_BODY] ?: false
+    }
+
+    val netRegexModeFlow: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[KEY_NET_REGEX_MODE] ?: false
     }
 
     val bookmarksFlow: Flow<List<BookmarkItem>> = context.dataStore.data.map { prefs ->
@@ -100,6 +125,40 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun saveCacheEnabled(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_CACHE_ENABLED] = enabled
+        }
+    }
+
+    suspend fun saveNetworkSearchQuery(query: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_NET_SEARCH_QUERY] = query
+        }
+    }
+
+    suspend fun saveNetworkExcludeQuery(query: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_NET_EXCLUDE_QUERY] = query
+        }
+    }
+
+    suspend fun saveNetworkFilterType(type: String?) {
+        context.dataStore.edit { prefs ->
+            if (type == null) {
+                prefs.remove(KEY_NET_FILTER_TYPE)
+            } else {
+                prefs[KEY_NET_FILTER_TYPE] = type
+            }
+        }
+    }
+
+    suspend fun saveNetworkSearchBody(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_NET_SEARCH_BODY] = enabled
+        }
+    }
+
+    suspend fun saveNetworkRegexMode(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_NET_REGEX_MODE] = enabled
         }
     }
 

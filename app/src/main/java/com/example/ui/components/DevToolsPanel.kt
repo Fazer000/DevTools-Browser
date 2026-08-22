@@ -51,32 +51,48 @@ fun DevToolsPanel(
             .background(MaterialTheme.colorScheme.surface)
     ) {
         // Draggable Resizer Splitter Bar
+        var isDragging by remember { mutableStateOf(false) }
+        val devToolsHeightFraction by viewModel.devToolsHeightFraction.collectAsState()
+        var localFraction by remember(devToolsHeightFraction) { mutableFloatStateOf(devToolsHeightFraction) }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(20.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .pointerInput(totalHeightPx) {
-                    detectDragGestures { change, dragAmount ->
-                        change.consume()
-                        if (totalHeightPx > 0) {
-                            val dy = dragAmount.y
-                            val currentFraction = viewModel.devToolsHeightFraction.value
-                            val deltaFraction = -dy / totalHeightPx
-                            viewModel.updateDevToolsHeight(currentFraction + deltaFraction)
+                .height(24.dp)
+                .background(if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                .pointerInput(Unit) {
+                    detectDragGestures(
+                        onDragStart = { isDragging = true },
+                        onDragEnd = {
+                            isDragging = false
+                            viewModel.updateDevToolsHeight(localFraction)
+                        },
+                        onDragCancel = { isDragging = false },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            if (totalHeightPx > 0) {
+                                val deltaFraction = -dragAmount.y / totalHeightPx
+                                val newFraction = (localFraction + deltaFraction).coerceIn(0.15f, 0.85f)
+                                localFraction = newFraction
+                                viewModel.updateDevToolsHeight(newFraction)
+                            }
                         }
-                    }
+                    )
                 }
                 .testTag("devtools_resizer_handle"),
             contentAlignment = Alignment.Center
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Box(
                     modifier = Modifier
-                        .width(36.dp)
-                        .height(4.dp)
+                        .width(48.dp)
+                        .height(5.dp)
                         .background(
-                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             shape = CircleShape
                         )
                 )
@@ -86,7 +102,8 @@ fun DevToolsPanel(
                 onClick = { viewModel.toggleDevToolsVisibility() },
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .size(20.dp)
+                    .padding(end = 4.dp)
+                    .size(24.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Close,
@@ -171,14 +188,7 @@ fun DevToolsPanel(
                     )
                 }
                 DevToolsTab.NETWORK -> {
-                    NetworkTab(
-                        requests = networkRequests,
-                        selectedType = networkFilterType,
-                        selectedRequest = selectedNetworkRequest,
-                        onSelectType = { viewModel.setNetworkFilterType(it) },
-                        onSelectRequest = { viewModel.selectNetworkRequest(it) },
-                        onClearNetwork = { viewModel.clearNetworkLogs() }
-                    )
+                    NetworkTab(viewModel = viewModel)
                 }
                 DevToolsTab.SOURCES -> {
                     SourcesTab(pageSource = pageSource)

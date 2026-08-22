@@ -134,6 +134,45 @@ fun WebViewContainer(
                     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                         return false // Let WebView handle link clicks natively
                     }
+
+                    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                        if (request != null) {
+                            val url = request.url.toString()
+                            if (!url.startsWith("data:") && !url.startsWith("blob:")) {
+                                val isMainFrame = request.isForMainFrame
+                                val headersMap = request.requestHeaders ?: emptyMap()
+                                val method = request.method ?: "GET"
+
+                                val type = when {
+                                    isMainFrame -> "doc"
+                                    url.endsWith(".js") || url.contains(".js?") -> "js"
+                                    url.endsWith(".css") || url.contains(".css?") -> "css"
+                                    url.contains(".png") || url.contains(".jpg") || url.contains(".jpeg") || url.contains(".gif") || url.contains(".svg") || url.contains(".webp") || url.contains(".ico") -> "img"
+                                    url.contains(".mp4") || url.contains(".webm") || url.contains(".m3u8") || url.contains(".mp3") || url.contains(".wav") || url.contains(".ts") -> "media"
+                                    url.contains(".woff") || url.contains(".ttf") || url.contains(".eot") -> "font"
+                                    else -> "other"
+                                }
+
+                                if (isMainFrame || type == "doc" || type == "media") {
+                                    val json = org.json.JSONObject().apply {
+                                        put("url", url)
+                                        put("method", method)
+                                        put("statusCode", 200)
+                                        put("statusText", "OK")
+                                        put("type", type)
+                                        put("durationMs", 0)
+                                        put("sizeBytes", 0)
+                                        put("initiator", if (isMainFrame) "MainFrame" else "WebView Engine")
+                                        put("requestHeaders", org.json.JSONObject(headersMap))
+                                        put("responseHeaders", org.json.JSONObject())
+                                        put("responseBody", "[Native WebView Resource]")
+                                    }.toString()
+                                    viewModel.onNetworkRequestJsonReceived(json)
+                                }
+                            }
+                        }
+                        return super.shouldInterceptRequest(view, request)
+                    }
                 }
 
                 // Configure Custom WebChromeClient

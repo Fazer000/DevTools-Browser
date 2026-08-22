@@ -77,8 +77,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _selectedNetworkRequest = MutableStateFlow<NetworkRequest?>(null)
     val selectedNetworkRequest: StateFlow<NetworkRequest?> = _selectedNetworkRequest.asStateFlow()
 
-    private val _networkFilterType = MutableStateFlow<String?>(null) // null = all, "fetch", "xhr", "doc", etc.
-    val networkFilterType: StateFlow<String?> = _networkFilterType.asStateFlow()
+    // Persistent Network Search & Filter Preferences
+    val networkSearchQuery: StateFlow<String> = repository.netSearchQueryFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, "")
+
+    val networkExcludeQuery: StateFlow<String> = repository.netExcludeQueryFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, "")
+
+    val networkFilterType: StateFlow<String?> = repository.netFilterTypeFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, null)
+
+    val networkSearchBody: StateFlow<Boolean> = repository.netSearchBodyFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, false)
+
+    val networkRegexMode: StateFlow<Boolean> = repository.netRegexModeFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, false)
 
     // DOM Tree
     private val _domTree = MutableStateFlow<DomNode?>(null)
@@ -254,8 +267,68 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         _selectedNetworkRequest.value = request
     }
 
+    fun setNetworkSearchQuery(query: String) {
+        viewModelScope.launch {
+            repository.saveNetworkSearchQuery(query)
+        }
+    }
+
+    fun setNetworkExcludeQuery(query: String) {
+        viewModelScope.launch {
+            repository.saveNetworkExcludeQuery(query)
+        }
+    }
+
     fun setNetworkFilterType(type: String?) {
-        _networkFilterType.value = type
+        viewModelScope.launch {
+            repository.saveNetworkFilterType(type)
+        }
+    }
+
+    fun setNetworkSearchBody(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.saveNetworkSearchBody(enabled)
+        }
+    }
+
+    fun setNetworkRegexMode(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.saveNetworkRegexMode(enabled)
+        }
+    }
+
+    fun addExcludeWord(word: String) {
+        val cleanWord = word.trim().trimStart('-', '!', ',')
+        if (cleanWord.isBlank()) return
+        val currentWords = networkExcludeQuery.value
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        if (!currentWords.contains(cleanWord)) {
+            val updated = (currentWords + cleanWord).joinToString(", ")
+            setNetworkExcludeQuery(updated)
+        }
+    }
+
+    fun removeExcludeWord(word: String) {
+        val currentWords = networkExcludeQuery.value
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toMutableList()
+        currentWords.removeAll { it.equals(word.trim(), ignoreCase = true) }
+        setNetworkExcludeQuery(currentWords.joinToString(", "))
+    }
+
+    fun clearNetworkFilters() {
+        viewModelScope.launch {
+            repository.saveNetworkSearchQuery("")
+            repository.saveNetworkExcludeQuery("")
+            repository.saveNetworkFilterType(null)
+            repository.saveNetworkSearchBody(false)
+            repository.saveNetworkRegexMode(false)
+        }
     }
 
     fun setUserAgent(userAgentType: UserAgentType) {
@@ -392,14 +465,105 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             statusCode = statusCode,
             type = type,
             durationMs = durationMs,
-            requestHeaders = reqHeaders,
+            requestHeaders = mapOf("Raw" to reqHeaders),
             requestBody = reqBody,
-            responseHeaders = resHeaders,
-            responseBody = resBody
+            responseHeaders = mapOf("Raw" to resHeaders),
+            responseBody = resBody,
+            queryParams = parseQueryParams(url)
         )
         viewModelScope.launch(Dispatchers.Main) {
-            _networkRequests.value = (listOf(req) + _networkRequests.value).take(100)
+            _networkRequests.value = (listOf(req) + _networkRequests.value.filterNot { it.url == url && it.type == type }).take(150)
         }
+    }
+
+    override fun onNetworkRequestJsonReceived(jsonString: String) {
+        try {
+            val obj = JSONObject(jsonString)
+            val url = obj.optString("url")
+            if (url.isBlank()) return
+
+            val reqHeadersMap = mutableMapOf<String, String>()
+            val reqHeadersObj = obj.optJSONObject("requestHeaders")
+            reqHeadersObj?.keys()?.forEach { k -> reqHeadersMap[k] = reqHeadersObj.getString(k) }
+
+            val resHeadersMap = mutableMapOf<String, String>()
+            val resHeadersObj = obj.optJSONObject("responseHeaders")
+            resHeadersObj?.keys()?.forEach { k -> resHeadersMap[k] = resHeadersObj.getString(k) }
+
+            val req = NetworkRequest(
+                url = url,
+                method = obj.optString("method", "GET"),
+                statusCode = obj.optInt("statusCode", 200),
+                statusText = obj.optString("statusText", "OK"),
+                type = obj.optString("type", "fetch"),
+                durationMs = obj.optLong("durationMs", 0),
+                sizeBytes = obj.optLong("sizeBytes", 0),
+                initiator = obj.optString("initiator", "Script"),
+                requestHeaders = reqHeadersMap,
+                requestBody = obj.optString("requestBody", ""),
+                responseHeaders = resHeadersMap,
+                responseBody = obj.optString("responseBody", ""),
+                queryParams = parseQueryParams(url)
+            )
+
+            viewModelScope.launch(Dispatchers.Main) {
+                val current = _networkRequests.value
+                // Deduplicate if already recorded with same URL and type within last second
+                val updated = listOf(req) + current.filterNot { it.url == req.url && it.type == req.type && (req.timestamp - it.timestamp) < 1000 }
+                _networkRequests.value = updated.take(150)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override fun onWebSocketFrameReceived(wsUrl: String, direction: String, payload: String) {
+        viewModelScope.launch(Dispatchers.Main) {
+            val frame = WsFrame(direction = direction, payload = payload)
+            val currentList = _networkRequests.value.toMutableList()
+            val index = currentList.indexOfFirst { it.url == wsUrl && it.type == "ws" }
+            if (index >= 0) {
+                val existing = currentList[index]
+                val updatedReq = existing.copy(wsFrames = existing.wsFrames + frame)
+                currentList[index] = updatedReq
+                _networkRequests.value = currentList
+                if (_selectedNetworkRequest.value?.id == existing.id) {
+                    _selectedNetworkRequest.value = updatedReq
+                }
+            } else {
+                val newWsReq = NetworkRequest(
+                    url = wsUrl,
+                    method = "GET",
+                    statusCode = 101,
+                    statusText = "Switching Protocols",
+                    type = "ws",
+                    initiator = "WebSocket",
+                    requestHeaders = mapOf("Upgrade" to "websocket", "Connection" to "Upgrade"),
+                    responseHeaders = mapOf("HTTP/1.1" to "101 Switching Protocols"),
+                    wsFrames = listOf(frame),
+                    queryParams = parseQueryParams(wsUrl)
+                )
+                _networkRequests.value = listOf(newWsReq) + _networkRequests.value
+            }
+        }
+    }
+
+    private fun parseQueryParams(urlString: String): Map<String, String> {
+        val map = mutableMapOf<String, String>()
+        try {
+            val query = urlString.substringAfter("?", "")
+            if (query.isNotBlank()) {
+                query.split("&").forEach { param ->
+                    val parts = param.split("=")
+                    if (parts.size >= 2) {
+                        map[java.net.URLDecoder.decode(parts[0], "UTF-8")] = java.net.URLDecoder.decode(parts.subList(1, parts.size).joinToString("="), "UTF-8")
+                    } else if (parts.isNotEmpty()) {
+                        map[java.net.URLDecoder.decode(parts[0], "UTF-8")] = ""
+                    }
+                }
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+        return map
     }
 
     override fun onElementInspectedReceived(jsonString: String) {
