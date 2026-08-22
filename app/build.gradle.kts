@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
 
 plugins {
   alias(libs.plugins.android.application)
@@ -25,14 +26,38 @@ android {
 
   signingConfigs {
     create("release") {
+      val keystorePropertiesFile = rootProject.file("keystore.properties")
+      val keystoreProperties = Properties()
+      if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { stream ->
+          keystoreProperties.load(stream)
+        }
+      }
+
       val keystoreEnv = System.getenv("KEYSTORE_PATH")
-      val keystorePath = if (!keystoreEnv.isNullOrBlank()) keystoreEnv else "${rootDir}/release.keystore"
+      val keystoreProp = keystoreProperties.getProperty("storeFile")
+      val keystorePath = if (!keystoreEnv.isNullOrBlank()) {
+        keystoreEnv
+      } else if (!keystoreProp.isNullOrBlank()) {
+        keystoreProp
+      } else {
+        "${rootDir}/release.keystore"
+      }
+
       val keystoreFile = file(keystorePath)
       if (keystoreFile.exists()) {
         storeFile = keystoreFile
-        storePassword = System.getenv("STORE_PASSWORD").takeUnless { it.isNullOrBlank() } ?: "release_password"
-        keyAlias = System.getenv("KEY_ALIAS").takeUnless { it.isNullOrBlank() } ?: "upload"
-        keyPassword = System.getenv("KEY_PASSWORD").takeUnless { it.isNullOrBlank() } ?: "release_password"
+        val envStorePass = System.getenv("STORE_PASSWORD")
+        val propStorePass = keystoreProperties.getProperty("storePassword")
+        storePassword = if (!envStorePass.isNullOrBlank()) envStorePass else if (!propStorePass.isNullOrBlank()) propStorePass else "release_password"
+
+        val envKeyAlias = System.getenv("KEY_ALIAS")
+        val propKeyAlias = keystoreProperties.getProperty("keyAlias")
+        keyAlias = if (!envKeyAlias.isNullOrBlank()) envKeyAlias else if (!propKeyAlias.isNullOrBlank()) propKeyAlias else "upload"
+
+        val envKeyPass = System.getenv("KEY_PASSWORD")
+        val propKeyPass = keystoreProperties.getProperty("keyPassword")
+        keyPassword = if (!envKeyPass.isNullOrBlank()) envKeyPass else if (!propKeyPass.isNullOrBlank()) propKeyPass else "release_password"
       } else {
         storeFile = file("${rootDir}/debug.keystore")
         storePassword = "android"
