@@ -36,13 +36,10 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Ensure Gradle Wrapper JAR exists
+      - name: Ensure valid Gradle Wrapper JAR
         run: |
-          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ] || [ ! -s "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Gradle wrapper JAR missing or empty, downloading..."
-            mkdir -p gradle/wrapper
-            curl -sSL "https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar
-          fi
+          mkdir -p gradle/wrapper
+          curl -sSL "https://raw.githubusercontent.com/gradle/gradle/v8.13.0/gradle/wrapper/gradle-wrapper.jar" -o gradle/wrapper/gradle-wrapper.jar
 
       - name: Setup Keystores and Properties
         run: |
