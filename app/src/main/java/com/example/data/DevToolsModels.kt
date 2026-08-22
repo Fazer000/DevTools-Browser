@@ -53,6 +53,7 @@ data class InspectedElement(
     val computedStyles: Map<String, String> = emptyMap(),
     val outerHtml: String = "",
     val innerHtml: String = "",
+    val selectorPath: String = "",
     val width: Float = 0f,
     val height: Float = 0f,
     val top: Float = 0f,

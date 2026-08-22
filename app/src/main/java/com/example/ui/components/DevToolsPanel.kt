@@ -42,8 +42,13 @@ fun DevToolsPanel(
     val userAgentType by viewModel.userAgentType.collectAsState()
     val jsEnabled by viewModel.jsEnabled.collectAsState()
     val cacheEnabled by viewModel.cacheEnabled.collectAsState()
+    val githubRepo by viewModel.githubRepo.collectAsState()
+    val githubRelease by viewModel.githubRelease.collectAsState()
+    val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
+    val updateCheckStatus by viewModel.updateCheckStatus.collectAsState()
 
     val density = LocalDensity.current
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Column(
         modifier = modifier
@@ -203,9 +208,16 @@ fun DevToolsPanel(
                         currentUserAgent = userAgentType,
                         jsEnabled = jsEnabled,
                         cacheEnabled = cacheEnabled,
+                        githubRepo = githubRepo,
+                        githubRelease = githubRelease,
+                        isCheckingUpdate = isCheckingUpdate,
+                        updateCheckStatus = updateCheckStatus,
                         onSelectUserAgent = { viewModel.setUserAgent(it) },
                         onSetJsEnabled = { viewModel.setJsEnabled(it) },
                         onSetCacheEnabled = { viewModel.setCacheEnabled(it) },
+                        onSetGithubRepo = { viewModel.setGithubRepo(it) },
+                        onCheckForUpdate = { viewModel.checkForAppUpdate() },
+                        onInstallUpdate = { viewModel.downloadAndInstallUpdate(context) },
                         onReload = { viewModel.reload() }
                     )
                 }

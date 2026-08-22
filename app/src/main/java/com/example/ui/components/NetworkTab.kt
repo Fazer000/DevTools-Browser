@@ -23,6 +23,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -520,6 +524,29 @@ fun NetworkTabContent(
                 }
             }
         } else {
+            val context = LocalContext.current
+            val clipboardManager = LocalClipboardManager.current
+
+            // Table Column Headers Bar
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text("STATUS", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(42.dp))
+                    Text("METHOD", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(48.dp))
+                    Text("NAME / PATH", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    Text("TYPE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(40.dp))
+                    Text("TIME", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(44.dp))
+                    Text("COPY", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(28.dp))
+                }
+            }
+            HorizontalDivider()
+
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -532,6 +559,7 @@ fun NetworkTabContent(
                         req.statusCode in 300..399 -> StatusWarning
                         else -> StatusError
                     }
+                    val displayPath = remember(req.url) { extractPathFromUrl(req.url) }
 
                     Surface(
                         modifier = Modifier
@@ -543,37 +571,40 @@ fun NetworkTabContent(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                .padding(horizontal = 8.dp, vertical = 5.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             // Status Badge
-                            Surface(
-                                color = statusColor.copy(alpha = 0.15f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    text = if (req.statusCode == 0) "FAIL" else req.statusCode.toString(),
-                                    color = statusColor,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                                )
+                            Box(modifier = Modifier.width(42.dp), contentAlignment = Alignment.CenterStart) {
+                                Surface(
+                                    color = statusColor.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = if (req.statusCode == 0) "FAIL" else req.statusCode.toString(),
+                                        color = statusColor,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
                             }
 
                             // Method Badge
                             Text(
                                 text = req.method,
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.width(48.dp)
                             )
 
-                            // URL Path
+                            // Relative URL Path (Domain Removed)
                             Text(
-                                text = req.url,
+                                text = displayPath,
                                 fontSize = 11.sp,
                                 fontFamily = FontFamily.Monospace,
                                 maxLines = 1,
@@ -584,24 +615,43 @@ fun NetworkTabContent(
                             // Type Tag
                             Surface(
                                 color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(4.dp)
+                                shape = RoundedCornerShape(4.dp),
+                                modifier = Modifier.width(40.dp)
                             ) {
                                 Text(
                                     text = req.type.uppercase(),
-                                    fontSize = 9.sp,
+                                    fontSize = 8.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                                    maxLines = 1
                                 )
                             }
 
-                            // Timing / Size
+                            // Timing
                             Text(
-                                text = if (req.durationMs > 0) "${req.durationMs}ms" else "",
+                                text = if (req.durationMs > 0) "${req.durationMs}ms" else "-",
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.width(44.dp)
                             )
+
+                            // Copy URL Icon Button
+                            IconButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(req.url))
+                                    android.widget.Toast.makeText(context, "Copied URL: ${req.url}", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ContentCopy,
+                                    contentDescription = "Copy URL",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
                         }
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
@@ -616,6 +666,20 @@ fun NetworkTabContent(
                 onDismiss = { onSelectRequest(null) }
             )
         }
+    }
+}
+
+private fun extractPathFromUrl(urlString: String): String {
+    if (urlString.isBlank()) return "/"
+    return try {
+        val uri = java.net.URI(urlString)
+        val path = uri.rawPath.ifEmpty { "/" }
+        val query = uri.rawQuery
+        if (!query.isNullOrBlank()) "$path?$query" else path
+    } catch (e: Exception) {
+        val withoutScheme = urlString.substringAfter("://")
+        val firstSlash = withoutScheme.indexOf('/')
+        if (firstSlash != -1) withoutScheme.substring(firstSlash) else "/"
     }
 }
 

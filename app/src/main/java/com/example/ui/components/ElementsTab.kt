@@ -1,23 +1,28 @@
 package com.example.ui.components
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -36,6 +41,8 @@ fun ElementsTab(
     onToggleInspector: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     var showStylesSheet by remember { mutableStateOf(false) }
 
     Column(
@@ -58,20 +65,27 @@ fun ElementsTab(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
                                 text = "<${inspectedElement.tagName}",
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = CodeTag,
-                                fontSize = 14.sp
+                                fontSize = 13.sp,
+                                softWrap = false,
+                                maxLines = 1
                             )
                             if (inspectedElement.id.isNotBlank()) {
                                 Text(
                                     text = "#${inspectedElement.id}",
                                     fontFamily = FontFamily.Monospace,
                                     color = CodeAttr,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp,
+                                    softWrap = false,
+                                    maxLines = 1
                                 )
                             }
                             if (inspectedElement.className.isNotBlank()) {
@@ -79,7 +93,9 @@ fun ElementsTab(
                                     text = ".${inspectedElement.className.replace(" ", ".")}",
                                     fontFamily = FontFamily.Monospace,
                                     color = CodeString,
-                                    fontSize = 13.sp
+                                    fontSize = 12.sp,
+                                    softWrap = false,
+                                    maxLines = 1
                                 )
                             }
                             Text(
@@ -87,9 +103,13 @@ fun ElementsTab(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = CodeTag,
-                                fontSize = 14.sp
+                                fontSize = 13.sp,
+                                softWrap = false,
+                                maxLines = 1
                             )
                         }
+
+                        Spacer(modifier = Modifier.width(6.dp))
 
                         Surface(
                             shape = RoundedCornerShape(4.dp),
@@ -97,14 +117,65 @@ fun ElementsTab(
                         ) {
                             Text(
                                 text = "${inspectedElement.width.toInt()} × ${inspectedElement.height.toInt()} px",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                softWrap = false
                             )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(6.dp))
+
+                    // Copy Action Buttons for Inspected Element
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(inspectedElement.outerHtml))
+                                Toast.makeText(context, "Copied outerHTML", Toast.LENGTH_SHORT).show()
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Copy outerHTML", fontSize = 10.sp)
+                        }
+
+                        if (inspectedElement.innerHtml.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(inspectedElement.innerHtml))
+                                    Toast.makeText(context, "Copied innerHTML", Toast.LENGTH_SHORT).show()
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(12.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Copy innerHTML", fontSize = 10.sp)
+                            }
+                        }
+
+                        if (inspectedElement.selectorPath.isNotBlank()) {
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(inspectedElement.selectorPath))
+                                    Toast.makeText(context, "Copied CSS Selector", Toast.LENGTH_SHORT).show()
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Text("Copy Selector", fontSize = 10.sp)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     // Computed Styles Summary
                     Row(
@@ -116,7 +187,9 @@ fun ElementsTab(
                             text = "Color: ${inspectedElement.computedStyles["color"] ?: "-"} | Display: ${inspectedElement.computedStyles["display"] ?: "-"}",
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            softWrap = false,
+                            maxLines = 1
                         )
 
                         TextButton(
@@ -150,8 +223,8 @@ fun ElementsTab(
                                     modifier = Modifier.padding(vertical = 1.dp),
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(text = "$k:", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = CodeAttr)
-                                    Text(text = v, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = CodeText)
+                                    Text(text = "$k:", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = CodeAttr, softWrap = false)
+                                    Text(text = v, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = CodeText, softWrap = false)
                                 }
                             }
                         }
@@ -210,13 +283,20 @@ fun ElementsTab(
                     }
                 }
             } else {
-                LazyColumn(
+                val horizontalScrollState = rememberScrollState()
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .testTag("dom_tree_list")
+                        .horizontalScroll(horizontalScrollState)
                 ) {
-                    item {
-                        DomNodeItem(node = domTree, indent = 0)
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .testTag("dom_tree_list")
+                    ) {
+                        item {
+                            DomNodeItem(node = domTree, indent = 0)
+                        }
                     }
                 }
             }
@@ -229,16 +309,16 @@ fun DomNodeItem(
     node: DomNode,
     indent: Int
 ) {
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     var isExpanded by remember { mutableStateOf(indent < 2) }
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
             .padding(start = (indent * 12).dp)
     ) {
         Row(
             modifier = Modifier
-                .fillMaxWidth()
                 .clickable { isExpanded = !isExpanded }
                 .padding(vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -259,26 +339,30 @@ fun DomNodeItem(
                     text = "\"${node.textContent}\"",
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
-                    color = CodeString
+                    color = CodeString,
+                    softWrap = false,
+                    maxLines = 1
                 )
             } else {
-                Text(text = "<", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = CodeTag)
+                Text(text = "<", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = CodeTag, softWrap = false)
                 Text(
                     text = node.tagName,
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = CodeTag
+                    color = CodeTag,
+                    softWrap = false
                 )
 
                 // Attributes
                 node.attributes.forEach { (key, value) ->
-                    Text(text = " $key=", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = CodeAttr)
+                    Text(text = " $key=", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = CodeAttr, softWrap = false)
                     Text(
-                        text = "\"${if (value.length > 25) value.take(25) + "..." else value}\"",
+                        text = "\"$value\"",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 12.sp,
-                        color = CodeString
+                        color = CodeString,
+                        softWrap = false
                     )
                 }
 
@@ -286,7 +370,32 @@ fun DomNodeItem(
                     text = if (node.children.isEmpty()) " />" else ">",
                     fontFamily = FontFamily.Monospace,
                     fontSize = 12.sp,
-                    color = CodeTag
+                    color = CodeTag,
+                    softWrap = false
+                )
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Copy node button
+            IconButton(
+                onClick = {
+                    val textToCopy = if (node.isTextNode) {
+                        node.textContent
+                    } else {
+                        val attrsStr = node.attributes.entries.joinToString(" ") { "${it.key}=\"${it.value}\"" }
+                        if (attrsStr.isNotBlank()) "<${node.tagName} $attrsStr>" else "<${node.tagName}>"
+                    }
+                    clipboardManager.setText(AnnotatedString(textToCopy))
+                    Toast.makeText(context, "Copied element tag", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.size(20.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ContentCopy,
+                    contentDescription = "Copy Element",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    modifier = Modifier.size(12.dp)
                 )
             }
         }
@@ -300,10 +409,16 @@ fun DomNodeItem(
             if (!node.isTextNode) {
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 14.dp, top = 1.dp, bottom = 1.dp)
+                        .padding(start = 14.dp, top = 1.dp, bottom = 1.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "</${node.tagName}>", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = CodeTag)
+                    Text(
+                        text = "</${node.tagName}>",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 12.sp,
+                        color = CodeTag,
+                        softWrap = false
+                    )
                 }
             }
         }

@@ -31,6 +31,11 @@ class UserPreferencesRepository(private val context: Context) {
         private val KEY_NET_FILTER_TYPE = stringPreferencesKey("net_filter_type")
         private val KEY_NET_SEARCH_BODY = booleanPreferencesKey("net_search_body")
         private val KEY_NET_REGEX_MODE = booleanPreferencesKey("net_regex_mode")
+        private val KEY_GITHUB_REPO = stringPreferencesKey("github_repo")
+    }
+
+    val githubRepoFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_GITHUB_REPO] ?: "zahirulmandolur292/DevBrowser"
     }
 
     val lastUrlFlow: Flow<String> = context.dataStore.data.map { prefs ->
@@ -159,6 +164,12 @@ class UserPreferencesRepository(private val context: Context) {
     suspend fun saveNetworkRegexMode(enabled: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[KEY_NET_REGEX_MODE] = enabled
+        }
+    }
+
+    suspend fun saveGithubRepo(repo: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_GITHUB_REPO] = repo.trim()
         }
     }
 

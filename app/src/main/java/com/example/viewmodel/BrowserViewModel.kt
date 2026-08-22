@@ -111,6 +111,19 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _pageSource = MutableStateFlow<String>("")
     val pageSource: StateFlow<String> = _pageSource.asStateFlow()
 
+    // App Update State
+    private val _githubRelease = MutableStateFlow<GitHubRelease?>(null)
+    val githubRelease: StateFlow<GitHubRelease?> = _githubRelease.asStateFlow()
+
+    private val _isCheckingUpdate = MutableStateFlow(false)
+    val isCheckingUpdate: StateFlow<Boolean> = _isCheckingUpdate.asStateFlow()
+
+    private val _updateCheckStatus = MutableStateFlow<String?>(null)
+    val updateCheckStatus: StateFlow<String?> = _updateCheckStatus.asStateFlow()
+
+    val githubRepo: StateFlow<String> = repository.githubRepoFlow
+        .stateIn(viewModelScope, SharingStarted.Lazily, "zahirulmandolur292/DevBrowser")
+
     // Preferences
     val userAgentType: StateFlow<UserAgentType> = repository.userAgentTypeFlow
         .stateIn(viewModelScope, SharingStarted.Lazily, UserAgentType.MOBILE_CHROME)
@@ -516,25 +529,35 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
             viewModelScope.launch(Dispatchers.Main) {
                 val current = _networkRequests.value.toMutableList()
-                // Find if there is a placeholder native request for same URL within last 3 seconds
-                val placeholderIndex = current.indexOfFirst {
-                    it.url == req.url &&
-                            (it.responseBody.startsWith("[Fetch/XHR") && !req.responseBody.startsWith("[Fetch/XHR"))
+                val matchIndex = current.indexOfFirst {
+                    it.url == req.url || (it.url.length > 5 && req.url.length > 5 && (it.url.endsWith(req.url) || req.url.endsWith(it.url)))
                 }
 
-                if (placeholderIndex != -1) {
-                    // Upgrade placeholder to detailed JS request
-                    current[placeholderIndex] = req
+                if (matchIndex != -1) {
+                    val existing = current[matchIndex]
+                    val updatedResponseBody = if (req.responseBody.isNotBlank() &&
+                        !req.responseBody.startsWith("[Fetch/XHR") &&
+                        !req.responseBody.startsWith("[Native")
+                    ) req.responseBody else existing.responseBody
+
+                    val updatedReq = existing.copy(
+                        method = if (req.method.isNotBlank()) req.method else existing.method,
+                        statusCode = if (req.statusCode != 0) req.statusCode else existing.statusCode,
+                        statusText = if (req.statusText.isNotBlank()) req.statusText else existing.statusText,
+                        type = if (req.type != "other") req.type else existing.type,
+                        durationMs = if (req.durationMs > 0) req.durationMs else existing.durationMs,
+                        sizeBytes = if (req.sizeBytes > 0) req.sizeBytes else existing.sizeBytes,
+                        requestHeaders = if (req.requestHeaders.isNotEmpty()) req.requestHeaders else existing.requestHeaders,
+                        requestBody = if (req.requestBody.isNotBlank()) req.requestBody else existing.requestBody,
+                        responseHeaders = if (req.responseHeaders.isNotEmpty()) req.responseHeaders else existing.responseHeaders,
+                        responseBody = updatedResponseBody
+                    )
+                    current[matchIndex] = updatedReq
+                    if (_selectedNetworkRequest.value?.id == existing.id) {
+                        _selectedNetworkRequest.value = updatedReq
+                    }
                 } else {
-                    // Check if exact same request was logged within last 100ms
-                    val duplicateIndex = current.indexOfFirst {
-                        it.url == req.url && it.method == req.method && Math.abs(req.timestamp - it.timestamp) < 100
-                    }
-                    if (duplicateIndex != -1 && req.responseBody.isNotBlank() && current[duplicateIndex].responseBody.isBlank()) {
-                        current[duplicateIndex] = req
-                    } else if (duplicateIndex == -1) {
-                        current.add(0, req)
-                    }
+                    current.add(0, req)
                 }
                 _networkRequests.value = current.take(200)
             }
@@ -686,7 +709,41 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         )
     }
 
+    fun setGithubRepo(repo: String) {
+        viewModelScope.launch {
+            repository.saveGithubRepo(repo)
+        }
+    }
+
+    fun checkForAppUpdate() {
+        viewModelScope.launch {
+            _isCheckingUpdate.value = true
+            _updateCheckStatus.value = "Checking GitHub..."
+            val repo = githubRepo.value
+            val currentVer = "1.0.0" // App current version name
+            val release = AppUpdateManager.checkForUpdate(repo, currentVer)
+            _isCheckingUpdate.value = false
+
+            if (release != null) {
+                _githubRelease.value = release
+                _updateCheckStatus.value = if (release.isNewer) "New version ${release.tagName} available!" else "App is up to date (${release.tagName})"
+            } else {
+                _updateCheckStatus.value = "Failed to fetch release info for $repo"
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(context: android.content.Context) {
+        val release = _githubRelease.value ?: return
+        if (release.apkUrl.isNotBlank()) {
+            AppUpdateManager.downloadAndInstallApk(context, release.apkUrl, release.tagName)
+        } else {
+            _updateCheckStatus.value = "No downloadable APK in release ${release.tagName}"
+        }
+    }
+
     private fun parseStorageItems(json: String): List<StorageItem> {
+        if (json.isBlank()) return emptyList()
         val list = mutableListOf<StorageItem>()
         try {
             val arr = JSONArray(json)

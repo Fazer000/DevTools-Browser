@@ -112,14 +112,31 @@ fun NetworkRequestDetailsSheet(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
-                    Text(
-                        text = request.url,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = request.url,
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(request.url))
+                                copiedNotification = "Request URL copied"
+                            },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ContentCopy,
+                                contentDescription = "Copy URL",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
                 }
 
                 IconButton(onClick = onDismiss) {
@@ -324,25 +341,73 @@ private fun PayloadTabContent(request: NetworkRequest, onCopy: (String, String) 
 
 @Composable
 private fun PreviewTabContent(request: NetworkRequest) {
-    val body = request.responseBody
+    val rawBody = request.responseBody
+    val formattedBody = remember(rawBody) { formatResponseBody(rawBody) }
+    val isImage = request.type.equals("img", ignoreCase = true) ||
+            request.url.contains(".png") || request.url.contains(".jpg") || request.url.contains(".jpeg") ||
+            request.url.contains(".svg") || request.url.contains(".webp") || request.url.contains(".gif")
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
     ) {
         HeaderSectionTitle("Response Preview")
-        Spacer(modifier = Modifier.height(4.dp))
-        if (body.isBlank()) {
-            Text("[No Preview Available]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(modifier = Modifier.height(6.dp))
+
+        if (isImage) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    coil.compose.AsyncImage(
+                        model = request.url,
+                        contentDescription = "Image Preview",
+                        modifier = Modifier.heightIn(max = 240.dp).fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = request.url, fontSize = 10.sp, fontFamily = FontFamily.Monospace, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else if (formattedBody.isNotBlank() && !formattedBody.startsWith("[Fetch/XHR") && !formattedBody.startsWith("[Native")) {
+            CodeBlock(content = formattedBody, scrollable = false)
         } else {
-            CodeBlock(content = body, scrollable = false)
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "Status: ${request.statusCode} ${request.statusText}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Type: ${request.type.uppercase()} | Duration: ${request.durationMs} ms | Size: ${request.sizeBytes} B",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (request.responseHeaders.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(text = "Response Content-Type: ${request.responseHeaders["content-type"] ?: request.responseHeaders["Content-Type"] ?: "Unknown"}", fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun ResponseTabContent(request: NetworkRequest, onCopy: (String, String) -> Unit) {
-    val body = request.responseBody
+    val rawBody = request.responseBody
+    val formattedBody = remember(rawBody) { formatResponseBody(rawBody) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -350,14 +415,14 @@ private fun ResponseTabContent(request: NetworkRequest, onCopy: (String, String)
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Raw Response (${body.length} chars)",
+                text = "Response Body (${formattedBody.length} chars)",
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.primary
             )
 
-            if (body.isNotBlank()) {
-                IconButton(onClick = { onCopy(body, "Response Body") }, modifier = Modifier.size(28.dp)) {
+            if (formattedBody.isNotBlank()) {
+                IconButton(onClick = { onCopy(formattedBody, "Response Body") }, modifier = Modifier.size(28.dp)) {
                     Icon(Icons.Default.ContentCopy, contentDescription = "Copy Response", modifier = Modifier.size(16.dp))
                 }
             }
@@ -365,11 +430,45 @@ private fun ResponseTabContent(request: NetworkRequest, onCopy: (String, String)
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        if (body.isBlank()) {
-            Text("[Empty Response Body]", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (formattedBody.isBlank() || formattedBody.startsWith("[Native") || formattedBody.startsWith("[Fetch/XHR")) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = if (formattedBody.isBlank()) "No response body returned." else formattedBody,
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Response Status: ${request.statusCode} ${request.statusText}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         } else {
-            CodeBlock(content = body, modifier = Modifier.weight(1f), scrollable = true)
+            CodeBlock(content = formattedBody, modifier = Modifier.weight(1f), scrollable = true)
         }
+    }
+}
+
+private fun formatResponseBody(raw: String): String {
+    if (raw.isBlank()) return ""
+    return try {
+        val trimmed = raw.trim()
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            org.json.JSONObject(trimmed).toString(2)
+        } else if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+            org.json.JSONArray(trimmed).toString(2)
+        } else {
+            raw
+        }
+    } catch (e: Exception) {
+        raw
     }
 }
 
