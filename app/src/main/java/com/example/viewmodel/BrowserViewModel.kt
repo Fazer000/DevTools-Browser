@@ -121,8 +121,14 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     private val _updateCheckStatus = MutableStateFlow<String?>(null)
     val updateCheckStatus: StateFlow<String?> = _updateCheckStatus.asStateFlow()
 
+    private val _downloadProgress = MutableStateFlow<Float?>(null)
+    val downloadProgress: StateFlow<Float?> = _downloadProgress.asStateFlow()
+
+    private val _downloadStatusText = MutableStateFlow<String?>(null)
+    val downloadStatusText: StateFlow<String?> = _downloadStatusText.asStateFlow()
+
     val githubRepo: StateFlow<String> = repository.githubRepoFlow
-        .stateIn(viewModelScope, SharingStarted.Lazily, "zahirulmandolur292/DevBrowser")
+        .stateIn(viewModelScope, SharingStarted.Lazily, "https://github.com/Fazer000/DevTools-Browser")
 
     // Preferences
     val userAgentType: StateFlow<UserAgentType> = repository.userAgentTypeFlow
@@ -735,10 +741,38 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
 
     fun downloadAndInstallUpdate(context: android.content.Context) {
         val release = _githubRelease.value ?: return
-        if (release.apkUrl.isNotBlank()) {
-            AppUpdateManager.downloadAndInstallApk(context, release.apkUrl, release.tagName)
-        } else {
+        if (release.apkUrl.isBlank()) {
             _updateCheckStatus.value = "No downloadable APK in release ${release.tagName}"
+            return
+        }
+
+        viewModelScope.launch {
+            _downloadProgress.value = 0f
+            _downloadStatusText.value = "Starting download..."
+            val file = AppUpdateManager.downloadApkWithProgress(
+                context = context,
+                downloadUrl = release.apkUrl,
+                tagName = release.tagName,
+                onProgress = { percent, downloaded, total ->
+                    if (percent >= 0) {
+                        _downloadProgress.value = percent / 100f
+                        val downloadedMb = String.format("%.1f", downloaded / (1024f * 1024f))
+                        val totalMb = if (total > 0) String.format("%.1f", total / (1024f * 1024f)) else "?"
+                        _downloadStatusText.value = "Downloading update: $percent% ($downloadedMb MB / $totalMb MB)"
+                    } else {
+                        _downloadStatusText.value = "Downloading update..."
+                    }
+                }
+            )
+
+            if (file != null && file.exists()) {
+                _downloadProgress.value = 1f
+                _downloadStatusText.value = "Download finished. Installing update..."
+                AppUpdateManager.installApk(context, file)
+            } else {
+                _downloadProgress.value = null
+                _downloadStatusText.value = "Download failed."
+            }
         }
     }
 

@@ -131,6 +131,76 @@ object AppUpdateManager {
         return remoteVer != currentVer
     }
 
+    suspend fun downloadApkWithProgress(
+        context: Context,
+        downloadUrl: String,
+        tagName: String,
+        onProgress: suspend (progressPercent: Int, downloadedBytes: Long, totalBytes: Long) -> Unit
+    ): File? = withContext(Dispatchers.IO) {
+        if (downloadUrl.isBlank()) return@withContext null
+
+        try {
+            val fileName = "DevBrowser_$tagName.apk"
+            val destinationFile = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), fileName)
+            if (destinationFile.exists()) destinationFile.delete()
+
+            var currentUrl = downloadUrl
+            var connection: HttpURLConnection
+            var redirects = 0
+
+            while (redirects < 5) {
+                val url = URL(currentUrl)
+                connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "GET"
+                connection.setRequestProperty("User-Agent", "DevBrowser-AppUpdate")
+                connection.instanceFollowRedirects = false
+                connection.connectTimeout = 15000
+                connection.readTimeout = 15000
+
+                val status = connection.responseCode
+                if (status == HttpURLConnection.HTTP_MOVED_TEMP || status == HttpURLConnection.HTTP_MOVED_PERM || status == 307 || status == 308) {
+                    val newUrl = connection.getHeaderField("Location")
+                    if (!newUrl.isNullOrBlank()) {
+                        currentUrl = newUrl
+                        redirects++
+                        continue
+                    }
+                }
+
+                if (status != HttpURLConnection.HTTP_OK) {
+                    return@withContext null
+                }
+
+                val totalLength = connection.contentLengthLong
+                connection.inputStream.use { input ->
+                    destinationFile.outputStream().use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var totalRead = 0L
+                        var lastReportedTime = 0L
+
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            totalRead += bytesRead
+
+                            val now = System.currentTimeMillis()
+                            if (now - lastReportedTime > 150 || totalRead == totalLength) {
+                                lastReportedTime = now
+                                val percent = if (totalLength > 0) ((totalRead * 100) / totalLength).toInt() else -1
+                                onProgress(percent, totalRead, totalLength)
+                            }
+                        }
+                    }
+                }
+                return@withContext destinationFile
+            }
+            null
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     fun downloadAndInstallApk(context: Context, downloadUrl: String, tagName: String) {
         if (downloadUrl.isBlank()) return
 

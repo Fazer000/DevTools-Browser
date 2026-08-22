@@ -46,6 +46,8 @@ fun DevToolsPanel(
     val githubRelease by viewModel.githubRelease.collectAsState()
     val isCheckingUpdate by viewModel.isCheckingUpdate.collectAsState()
     val updateCheckStatus by viewModel.updateCheckStatus.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
+    val downloadStatusText by viewModel.downloadStatusText.collectAsState()
 
     val density = LocalDensity.current
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -61,8 +63,8 @@ fun DevToolsPanel(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(24.dp)
-                .background(if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant)
+                .height(20.dp)
+                .background(if (isDragging) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface)
                 .pointerInput(totalHeightPx) {
                     detectDragGestures(
                         onDragStart = { isDragging = true },
@@ -212,6 +214,8 @@ fun DevToolsPanel(
                         githubRelease = githubRelease,
                         isCheckingUpdate = isCheckingUpdate,
                         updateCheckStatus = updateCheckStatus,
+                        downloadProgress = downloadProgress,
+                        downloadStatusText = downloadStatusText,
                         onSelectUserAgent = { viewModel.setUserAgent(it) },
                         onSetJsEnabled = { viewModel.setJsEnabled(it) },
                         onSetCacheEnabled = { viewModel.setCacheEnabled(it) },

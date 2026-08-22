@@ -34,6 +34,8 @@ fun DevicesSettingsTab(
     githubRelease: GitHubRelease?,
     isCheckingUpdate: Boolean,
     updateCheckStatus: String?,
+    downloadProgress: Float?,
+    downloadStatusText: String?,
     onSelectUserAgent: (UserAgentType) -> Unit,
     onSetJsEnabled: (Boolean) -> Unit,
     onSetCacheEnabled: (Boolean) -> Unit,
@@ -115,6 +117,27 @@ fun DevicesSettingsTab(
                 fontWeight = FontWeight.Bold,
                 color = if (githubRelease?.isNewer == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+
+        if (downloadProgress != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (!downloadStatusText.isNullOrBlank()) {
+                    Text(
+                        text = downloadStatusText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+                LinearProgressIndicator(
+                    progress = { downloadProgress.coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant
+                )
+            }
         }
 
         if (githubRelease != null) {

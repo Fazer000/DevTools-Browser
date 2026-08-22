@@ -35,7 +35,7 @@ class UserPreferencesRepository(private val context: Context) {
     }
 
     val githubRepoFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[KEY_GITHUB_REPO] ?: "zahirulmandolur292/DevBrowser"
+        prefs[KEY_GITHUB_REPO] ?: "https://github.com/Fazer000/DevTools-Browser"
     }
 
     val lastUrlFlow: Flow<String> = context.dataStore.data.map { prefs ->
