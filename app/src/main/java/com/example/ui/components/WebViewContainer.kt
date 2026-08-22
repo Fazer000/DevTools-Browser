@@ -78,6 +78,7 @@ fun WebViewContainer(
                 settings.apply {
                     javaScriptEnabled = jsEnabled
                     domStorageEnabled = true
+                    @Suppress("DEPRECATION")
                     databaseEnabled = true
                     allowContentAccess = true
                     allowFileAccess = true
