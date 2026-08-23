@@ -73,10 +73,17 @@ fun WebViewContainer(
             .testTag("webview_main"),
         factory = { context ->
             WebView(context).apply {
+                val wv = this
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
                 )
+
+                // Setup CookieManager
+                CookieManager.getInstance().apply {
+                    setAcceptCookie(true)
+                    setAcceptThirdPartyCookies(wv, true)
+                }
 
                 // Setup WebView Settings
                 settings.apply {
@@ -201,92 +208,26 @@ fun WebViewContainer(
                                     else -> "other"
                                 }
 
-                                if (isFetchOrXhr || (method == "GET" && (url.contains("/api/") || acceptHeader.contains("json")))) {
-                                    try {
-                                        val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-                                            requestMethod = method
-                                            connectTimeout = 6000
-                                            readTimeout = 6000
-                                            headersMap.forEach { (k, v) -> setRequestProperty(k, v) }
-                                        }
-                                        val code = conn.responseCode
-                                        val msg = conn.responseMessage ?: "OK"
-                                        val stream = if (code in 200..399) conn.inputStream else conn.errorStream
-                                        val bytes = stream?.readBytes() ?: ByteArray(0)
-
-                                        val resHeadersMap = mutableMapOf<String, String>()
-                                        conn.headerFields.forEach { (k, v) ->
-                                            if (k != null && v.isNotEmpty()) resHeadersMap[k] = v.joinToString(", ")
-                                        }
-
-                                        val contentType = conn.contentType ?: ""
-                                        val isTextOrJson = contentType.contains("json", ignoreCase = true) ||
-                                                contentType.contains("text", ignoreCase = true) ||
-                                                contentType.contains("javascript", ignoreCase = true) ||
-                                                contentType.contains("xml", ignoreCase = true) ||
-                                                contentType.contains("html", ignoreCase = true) ||
-                                                url.contains("/api/") ||
-                                                bytes.size < 200000
-
-                                        val bodyStr = if (isTextOrJson && bytes.isNotEmpty()) {
-                                            try { String(bytes, Charsets.UTF_8).take(100000) } catch (e: Exception) { "[Binary Data]" }
-                                        } else if (bytes.isNotEmpty()) {
-                                            "[Binary Data: ${bytes.size} bytes]"
-                                        } else {
-                                            "[Empty Response]"
-                                        }
-
-                                        val json = org.json.JSONObject().apply {
-                                            put("url", url)
-                                            put("method", method)
-                                            put("statusCode", code)
-                                            put("statusText", msg)
-                                            put("type", if (isFetchOrXhr) "fetch" else type)
-                                            put("durationMs", 0)
-                                            put("sizeBytes", bytes.size)
-                                            put("initiator", if (isMainFrame) "MainFrame" else "Fetch/XHR Engine")
-                                            put("requestHeaders", org.json.JSONObject(headersMap))
-                                            put("responseHeaders", org.json.JSONObject(resHeadersMap))
-                                            put("responseBody", bodyStr)
-                                        }.toString()
-
-                                        viewModel.onNetworkRequestJsonReceived(json)
-
-                                        val mimeType = contentType.substringBefore(";").ifBlank { "text/plain" }
-                                        val encoding = conn.contentEncoding ?: "UTF-8"
-
-                                        return WebResourceResponse(
-                                            mimeType,
-                                            encoding,
-                                            code,
-                                            msg,
-                                            resHeadersMap,
-                                            java.io.ByteArrayInputStream(bytes)
-                                        )
-                                    } catch (e: Exception) {
-                                        // Fall back to default WebView network handling if connection fails
-                                    }
-                                }
-
-                                if (isMainFrame || isFetchOrXhr || type == "doc" || type == "media") {
+                                if (isMainFrame || type == "doc" || type == "media") {
                                     val json = org.json.JSONObject().apply {
                                         put("url", url)
                                         put("method", method)
                                         put("statusCode", 200)
                                         put("statusText", "OK")
-                                        put("type", if (isFetchOrXhr) "fetch" else type)
+                                        put("type", type)
                                         put("durationMs", 0)
                                         put("sizeBytes", 0)
-                                        put("initiator", if (isMainFrame) "MainFrame" else if (isFetchOrXhr) "Fetch/XHR Engine" else "WebView Engine")
+                                        put("initiator", if (isMainFrame) "MainFrame" else "WebView Engine")
                                         put("requestHeaders", org.json.JSONObject(headersMap))
                                         put("responseHeaders", org.json.JSONObject())
-                                        put("responseBody", if (isFetchOrXhr) "[Fetch/XHR Request]" else "[Native WebView Resource]")
+                                        put("responseBody", "[Native WebView Resource]")
                                     }.toString()
                                     viewModel.onNetworkRequestJsonReceived(json)
                                 }
                             }
                         }
-                        return super.shouldInterceptRequest(view, request)
+                        // Always return null to let WebView execute network requests natively with full POST bodies, cookies, and OAuth params
+                        return null
                     }
                 }
 

@@ -156,6 +156,21 @@ fun DevicesSettingsTab(
                     if (githubRelease.publishedAt.isNotBlank()) {
                         Text(text = "Published: ${githubRelease.publishedAt}", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    if (githubRelease.apkFileName.isNotBlank()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            shape = RoundedCornerShape(4.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "📦 Target: ${githubRelease.apkFileName} (${if (githubRelease.isDebugApk) "Debug Version" else "Release Version"})",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = githubRelease.body.take(300),

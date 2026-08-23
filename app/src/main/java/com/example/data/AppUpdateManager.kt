@@ -23,7 +23,9 @@ data class GitHubRelease(
     val body: String,
     val apkUrl: String,
     val publishedAt: String,
-    val isNewer: Boolean
+    val isNewer: Boolean,
+    val isDebugApk: Boolean = true,
+    val apkFileName: String = ""
 )
 
 object AppUpdateManager {
@@ -86,18 +88,53 @@ object AppUpdateManager {
         val body = json.optString("body", "No release notes provided.")
         val publishedAt = json.optString("published_at", "")
 
-        // Find APK asset URL
-        var apkUrl = ""
+        // Find APK asset URL prioritizing debug APK
+        var debugApkUrl = ""
+        var debugFileName = ""
+        var releaseApkUrl = ""
+        var releaseFileName = ""
+        var fallbackApkUrl = ""
+        var fallbackFileName = ""
+
         val assets = json.optJSONArray("assets")
         if (assets != null) {
             for (i in 0 until assets.length()) {
                 val asset = assets.getJSONObject(i)
                 val assetName = asset.optString("name", "")
                 if (assetName.endsWith(".apk", ignoreCase = true)) {
-                    apkUrl = asset.optString("browser_download_url", "")
-                    if (assetName.contains("release", ignoreCase = true)) break // Prefer release APK if found
+                    val downloadUrl = asset.optString("browser_download_url", "")
+                    if (fallbackApkUrl.isBlank()) {
+                        fallbackApkUrl = downloadUrl
+                        fallbackFileName = assetName
+                    }
+                    if (assetName.contains("debug", ignoreCase = true)) {
+                        debugApkUrl = downloadUrl
+                        debugFileName = assetName
+                    } else if (assetName.contains("release", ignoreCase = true)) {
+                        releaseApkUrl = downloadUrl
+                        releaseFileName = assetName
+                    }
                 }
             }
+        }
+
+        val apkUrl: String
+        val isDebugApk: Boolean
+        val apkFileName: String
+
+        // Prioritize Debug APK for seamless in-app updates
+        if (debugApkUrl.isNotBlank()) {
+            apkUrl = debugApkUrl
+            isDebugApk = true
+            apkFileName = debugFileName
+        } else if (releaseApkUrl.isNotBlank()) {
+            apkUrl = releaseApkUrl
+            isDebugApk = false
+            apkFileName = releaseFileName
+        } else {
+            apkUrl = fallbackApkUrl
+            isDebugApk = fallbackFileName.contains("debug", ignoreCase = true)
+            apkFileName = fallbackFileName
         }
 
         if (tagName.isBlank() && apkUrl.isBlank()) return null
@@ -112,7 +149,9 @@ object AppUpdateManager {
             body = body,
             apkUrl = apkUrl,
             publishedAt = publishedAt,
-            isNewer = isNewer
+            isNewer = isNewer,
+            isDebugApk = isDebugApk,
+            apkFileName = apkFileName
         )
     }
 
