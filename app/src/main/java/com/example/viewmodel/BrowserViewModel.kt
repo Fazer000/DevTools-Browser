@@ -549,7 +549,11 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
             viewModelScope.launch(Dispatchers.Main) {
                 val current = _networkRequests.value.toMutableList()
                 val matchIndex = current.indexOfFirst {
-                    it.url == req.url || (it.url.length > 5 && req.url.length > 5 && (it.url.endsWith(req.url) || req.url.endsWith(it.url)))
+                    it.url == req.url && (it.method == req.method || req.method.isBlank()) && (
+                        it.responseBody.startsWith("[Fetch/XHR") ||
+                        it.responseBody.startsWith("[Native") ||
+                        it.durationMs == 0L
+                    )
                 }
 
                 if (matchIndex != -1) {

@@ -180,7 +180,7 @@ fun WebViewContainer(
                     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                         if (request != null) {
                             val url = request.url.toString()
-                            if (!url.startsWith("data:") && !url.startsWith("blob:")) {
+                            if (!url.startsWith("data:") && !url.startsWith("blob:") && !url.startsWith("about:") && !url.startsWith("javascript:")) {
                                 val isMainFrame = request.isForMainFrame
                                 val headersMap = request.requestHeaders ?: emptyMap()
                                 val method = request.method ?: "GET"
@@ -190,40 +190,44 @@ fun WebViewContainer(
                                 val secFetchMode = headersMap["Sec-Fetch-Mode"] ?: headersMap["sec-fetch-mode"] ?: ""
                                 val dest = headersMap["Sec-Fetch-Dest"] ?: headersMap["sec-fetch-dest"] ?: ""
 
+                                val lowerUrl = url.lowercase()
+
                                 val isFetchOrXhr = xReqWith.equals("XMLHttpRequest", ignoreCase = true) ||
-                                        (dest.equals("empty", ignoreCase = true) && !isMainFrame) ||
+                                        dest.equals("empty", ignoreCase = true) ||
+                                        dest.equals("serviceworker", ignoreCase = true) ||
                                         secFetchMode.contains("cors", ignoreCase = true) ||
                                         acceptHeader.contains("json", ignoreCase = true) ||
-                                        url.contains("/api/", ignoreCase = true) ||
-                                        url.contains("graphql", ignoreCase = true)
+                                        lowerUrl.contains("/api/") ||
+                                        lowerUrl.contains("graphql") ||
+                                        lowerUrl.contains("/v1/") || lowerUrl.contains("/v2/") || lowerUrl.contains("/v3/")
 
                                 val type = when {
                                     isMainFrame -> "doc"
                                     isFetchOrXhr -> "fetch"
-                                    url.endsWith(".js") || url.contains(".js?") -> "js"
-                                    url.endsWith(".css") || url.contains(".css?") -> "css"
-                                    url.contains(".png") || url.contains(".jpg") || url.contains(".jpeg") || url.contains(".gif") || url.contains(".svg") || url.contains(".webp") || url.contains(".ico") -> "img"
-                                    url.contains(".mp4") || url.contains(".webm") || url.contains(".m3u8") || url.contains(".mp3") || url.contains(".wav") || url.contains(".ts") -> "media"
-                                    url.contains(".woff") || url.contains(".ttf") || url.contains(".eot") -> "font"
+                                    lowerUrl.contains(".js") || lowerUrl.contains(".js?") -> "js"
+                                    lowerUrl.contains(".css") || lowerUrl.contains(".css?") -> "css"
+                                    lowerUrl.contains(".png") || lowerUrl.contains(".jpg") || lowerUrl.contains(".jpeg") || lowerUrl.contains(".gif") || lowerUrl.contains(".svg") || lowerUrl.contains(".webp") || lowerUrl.contains(".ico") || lowerUrl.contains(".avif") -> "img"
+                                    lowerUrl.contains(".mp4") || lowerUrl.contains(".webm") || lowerUrl.contains(".m3u8") || lowerUrl.contains(".mp3") || lowerUrl.contains(".wav") || lowerUrl.contains(".ts") || lowerUrl.contains(".ogg") || lowerUrl.contains(".aac") -> "media"
+                                    lowerUrl.contains(".woff") || lowerUrl.contains(".ttf") || lowerUrl.contains(".eot") || lowerUrl.contains(".otf") -> "font"
+                                    dest.equals("iframe", ignoreCase = true) || dest.equals("frame", ignoreCase = true) -> "doc"
                                     else -> "other"
                                 }
 
-                                if (isMainFrame || type == "doc" || type == "media") {
-                                    val json = org.json.JSONObject().apply {
-                                        put("url", url)
-                                        put("method", method)
-                                        put("statusCode", 200)
-                                        put("statusText", "OK")
-                                        put("type", type)
-                                        put("durationMs", 0)
-                                        put("sizeBytes", 0)
-                                        put("initiator", if (isMainFrame) "MainFrame" else "WebView Engine")
-                                        put("requestHeaders", org.json.JSONObject(headersMap))
-                                        put("responseHeaders", org.json.JSONObject())
-                                        put("responseBody", "[Native WebView Resource]")
-                                    }.toString()
-                                    viewModel.onNetworkRequestJsonReceived(json)
-                                }
+                                val json = org.json.JSONObject().apply {
+                                    put("url", url)
+                                    put("method", method)
+                                    put("statusCode", 200)
+                                    put("statusText", "OK")
+                                    put("type", type)
+                                    put("durationMs", 0)
+                                    put("sizeBytes", 0)
+                                    put("initiator", if (isMainFrame) "MainFrame" else if (isFetchOrXhr) "Fetch/XHR Engine" else "WebView Engine")
+                                    put("requestHeaders", org.json.JSONObject(headersMap))
+                                    put("responseHeaders", org.json.JSONObject())
+                                    put("responseBody", if (isFetchOrXhr) "[Fetch/XHR Pending/Native]" else "[Native WebView Resource]")
+                                }.toString()
+
+                                viewModel.onNetworkRequestJsonReceived(json)
                             }
                         }
                         // Always return null to let WebView execute network requests natively with full POST bodies, cookies, and OAuth params
