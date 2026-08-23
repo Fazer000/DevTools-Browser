@@ -61,6 +61,42 @@ object InjectedScripts {
                 } catch(e) {}
             }
 
+            function toAbsUrl(url) {
+                if (!url) return '';
+                try {
+                    return new URL(url, window.location.href).href;
+                } catch(e) {
+                    return url;
+                }
+            }
+
+            function formatBody(body) {
+                if (!body) return '';
+                if (typeof body === 'string') return body;
+                if (typeof URLSearchParams !== 'undefined' && body instanceof URLSearchParams) {
+                    return body.toString();
+                }
+                if (typeof FormData !== 'undefined' && body instanceof FormData) {
+                    try {
+                        var entries = [];
+                        body.forEach(function(val, key) {
+                            if (typeof val === 'string') {
+                                entries.push(encodeURIComponent(key) + '=' + encodeURIComponent(val));
+                            } else {
+                                entries.push(encodeURIComponent(key) + '=[File: ' + (val.name || 'blob') + ']');
+                            }
+                        });
+                        return entries.join('&');
+                    } catch(e) {
+                        return '[FormData Object]';
+                    }
+                }
+                if (typeof body === 'object') {
+                    try { return JSON.stringify(body); } catch(e) { return String(body); }
+                }
+                return String(body);
+            }
+
             function parseHeaders(headersObj) {
                 var res = {};
                 if (!headersObj) return res;
@@ -81,9 +117,10 @@ object InjectedScripts {
                     var args = arguments;
                     var input = args[0];
                     var init = args[1] || {};
-                    var url = typeof input === 'string' ? input : (input && input.url ? input.url : 'Fetch');
+                    var rawUrl = typeof input === 'string' ? input : (input && input.url ? input.url : 'Fetch');
+                    var url = toAbsUrl(rawUrl);
                     var method = (init.method || (input && input.method) || 'GET').toUpperCase();
-                    var reqBody = init.body ? String(init.body) : '';
+                    var reqBody = formatBody(init.body || (input && input.body));
                     var reqHeaders = parseHeaders(init.headers || (input && input.headers));
                     var startTime = Date.now();
 
@@ -91,25 +128,77 @@ object InjectedScripts {
                         var duration = Date.now() - startTime;
                         var status = response.status;
                         var statusText = response.statusText || (status === 200 ? 'OK' : 'HTTP ' + status);
-                        var clone = response.clone();
-                        var resHeaders = parseHeaders(clone.headers);
+                        var resHeaders = parseHeaders(response.headers);
 
-                        clone.text().then(function(bodyText) {
-                            sendNetJson({
-                                url: url,
-                                method: method,
-                                statusCode: status,
-                                statusText: statusText,
-                                type: 'fetch',
-                                durationMs: duration,
-                                sizeBytes: bodyText ? bodyText.length : 0,
-                                initiator: 'fetch()',
-                                requestHeaders: reqHeaders,
-                                requestBody: reqBody,
-                                responseHeaders: resHeaders,
-                                responseBody: bodyText.substring(0, 100000)
+                        try {
+                            var clone = response.clone();
+                            clone.text().then(function(bodyText) {
+                                sendNetJson({
+                                    url: url,
+                                    method: method,
+                                    statusCode: status,
+                                    statusText: statusText,
+                                    type: 'fetch',
+                                    durationMs: duration,
+                                    sizeBytes: bodyText ? bodyText.length : 0,
+                                    initiator: 'fetch()',
+                                    requestHeaders: reqHeaders,
+                                    requestBody: reqBody,
+                                    responseHeaders: resHeaders,
+                                    responseBody: bodyText.substring(0, 100000)
+                                });
+                            }).catch(function() {
+                                try {
+                                    var clone2 = response.clone();
+                                    clone2.arrayBuffer().then(function(ab) {
+                                        sendNetJson({
+                                            url: url,
+                                            method: method,
+                                            statusCode: status,
+                                            statusText: statusText,
+                                            type: 'fetch',
+                                            durationMs: duration,
+                                            sizeBytes: ab.byteLength,
+                                            initiator: 'fetch()',
+                                            requestHeaders: reqHeaders,
+                                            requestBody: reqBody,
+                                            responseHeaders: resHeaders,
+                                            responseBody: '[ArrayBuffer / Binary Data: ' + ab.byteLength + ' bytes]'
+                                        });
+                                    }).catch(function() {
+                                        sendNetJson({
+                                            url: url,
+                                            method: method,
+                                            statusCode: status,
+                                            statusText: statusText,
+                                            type: 'fetch',
+                                            durationMs: duration,
+                                            sizeBytes: 0,
+                                            initiator: 'fetch()',
+                                            requestHeaders: reqHeaders,
+                                            requestBody: reqBody,
+                                            responseHeaders: resHeaders,
+                                            responseBody: '[Stream / Opaque Response]'
+                                        });
+                                    });
+                                } catch(e2) {
+                                    sendNetJson({
+                                        url: url,
+                                        method: method,
+                                        statusCode: status,
+                                        statusText: statusText,
+                                        type: 'fetch',
+                                        durationMs: duration,
+                                        sizeBytes: 0,
+                                        initiator: 'fetch()',
+                                        requestHeaders: reqHeaders,
+                                        requestBody: reqBody,
+                                        responseHeaders: resHeaders,
+                                        responseBody: '[Stream / Opaque Response]'
+                                    });
+                                }
                             });
-                        }).catch(function() {
+                        } catch(eClone) {
                             sendNetJson({
                                 url: url,
                                 method: method,
@@ -122,9 +211,9 @@ object InjectedScripts {
                                 requestHeaders: reqHeaders,
                                 requestBody: reqBody,
                                 responseHeaders: resHeaders,
-                                responseBody: '[Binary or Stream response]'
+                                responseBody: '[Response Read Exception: ' + (eClone.message || String(eClone)) + ']'
                             });
-                        });
+                        }
 
                         return response;
                     }).catch(function(err) {
@@ -154,10 +243,11 @@ object InjectedScripts {
             var origSend = XMLHttpRequest.prototype.send;
 
             XMLHttpRequest.prototype.open = function(method, url) {
-                this._url = url;
+                this._url = toAbsUrl(url);
                 this._method = (method || 'GET').toUpperCase();
                 this._startTime = Date.now();
                 this._reqHeaders = {};
+                this._reported = false;
                 return origOpen.apply(this, arguments);
             };
 
@@ -169,49 +259,73 @@ object InjectedScripts {
 
             XMLHttpRequest.prototype.send = function(body) {
                 var xhr = this;
-                var reqBodyStr = body ? String(body) : '';
+                var reqBodyStr = formatBody(body);
 
-                this.addEventListener('load', function() {
+                function handleXhrFinish(errorText) {
+                    if (xhr._reported) return;
+                    xhr._reported = true;
+
                     var duration = Date.now() - (xhr._startTime || Date.now());
-                    var rawResHeaders = xhr.getAllResponseHeaders() || '';
+                    var rawResHeaders = '';
+                    try { rawResHeaders = xhr.getAllResponseHeaders() || ''; } catch(e) {}
                     var parsedResHeaders = {};
                     rawResHeaders.split('\r\n').forEach(function(line) {
                         var parts = line.split(': ');
                         if (parts.length > 1) parsedResHeaders[parts[0].trim()] = parts.slice(1).join(': ').trim();
                     });
 
+                    var resBodyStr = '';
+                    var resSize = 0;
+
+                    if (errorText) {
+                        resBodyStr = errorText;
+                    } else {
+                        try {
+                            var rType = xhr.responseType || '';
+                            if (rType === '' || rType === 'text') {
+                                resBodyStr = xhr.responseText || '';
+                                resSize = resBodyStr.length;
+                            } else if (rType === 'json') {
+                                resBodyStr = typeof xhr.response === 'object' ? JSON.stringify(xhr.response) : String(xhr.response || '');
+                                resSize = resBodyStr.length;
+                            } else if (rType === 'document') {
+                                resBodyStr = xhr.responseXML ? (xhr.responseXML.documentElement ? xhr.responseXML.documentElement.outerHTML : '[Document]') : '[Document]';
+                                resSize = resBodyStr.length;
+                            } else if (rType === 'blob') {
+                                resSize = xhr.response ? (xhr.response.size || 0) : 0;
+                                resBodyStr = '[Blob Data: ' + resSize + ' bytes]';
+                            } else if (rType === 'arraybuffer') {
+                                resSize = xhr.response ? (xhr.response.byteLength || 0) : 0;
+                                resBodyStr = '[ArrayBuffer Data: ' + resSize + ' bytes]';
+                            } else {
+                                resBodyStr = String(xhr.response || '');
+                                resSize = resBodyStr.length;
+                            }
+                        } catch(e) {
+                            resBodyStr = '[Response read error: ' + (e.message || String(e)) + ']';
+                        }
+                    }
+
                     sendNetJson({
                         url: xhr._url || 'XHR',
                         method: xhr._method || 'GET',
-                        statusCode: xhr.status,
-                        statusText: xhr.statusText || (xhr.status === 200 ? 'OK' : 'XHR ' + xhr.status),
+                        statusCode: errorText ? 0 : xhr.status,
+                        statusText: errorText ? 'Failed' : (xhr.statusText || (xhr.status === 200 ? 'OK' : 'XHR ' + xhr.status)),
                         type: 'xhr',
                         durationMs: duration,
-                        sizeBytes: (xhr.responseText || '').length,
+                        sizeBytes: resSize,
                         initiator: 'XMLHttpRequest',
                         requestHeaders: xhr._reqHeaders || {},
                         requestBody: reqBodyStr,
                         responseHeaders: parsedResHeaders,
-                        responseBody: (xhr.responseText || '').substring(0, 100000)
+                        responseBody: resBodyStr.substring(0, 100000)
                     });
-                });
+                }
 
-                this.addEventListener('error', function() {
-                    sendNetJson({
-                        url: xhr._url || 'XHR',
-                        method: xhr._method || 'GET',
-                        statusCode: 0,
-                        statusText: 'Failed',
-                        type: 'xhr',
-                        durationMs: Date.now() - (xhr._startTime || Date.now()),
-                        sizeBytes: 0,
-                        initiator: 'XMLHttpRequest',
-                        requestHeaders: xhr._reqHeaders || {},
-                        requestBody: reqBodyStr,
-                        responseHeaders: {},
-                        responseBody: 'XHR Network Error'
-                    });
-                });
+                this.addEventListener('load', function() { handleXhrFinish(null); });
+                this.addEventListener('error', function() { handleXhrFinish('XHR Network Error'); });
+                this.addEventListener('abort', function() { handleXhrFinish('XHR Aborted'); });
+                this.addEventListener('timeout', function() { handleXhrFinish('XHR Timeout'); });
 
                 return origSend.apply(this, arguments);
             };
