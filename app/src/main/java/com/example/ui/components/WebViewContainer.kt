@@ -1,9 +1,13 @@
 package com.example.ui.components
 
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
 import android.os.Build
 import android.view.ViewGroup
 import android.webkit.*
+import android.widget.Toast
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -141,7 +145,29 @@ fun WebViewContainer(
                     }
 
                     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                        return false // Let WebView handle link clicks natively
+                        val url = request?.url?.toString() ?: return false
+                        return handleCustomIntentUrl(context, view, url)
+                    }
+
+                    @Suppress("DEPRECATION")
+                    override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
+                        if (url.isNullOrBlank()) return false
+                        return handleCustomIntentUrl(context, view, url)
+                    }
+
+                    override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler?, error: android.net.http.SslError?) {
+                        val errorMsg = error?.toString() ?: "SSL Certificate Warning"
+                        viewModel.onConsoleLogReceived("WARN", "SSL Certificate Warning: $errorMsg", view?.url ?: "")
+                        handler?.proceed()
+                    }
+
+                    override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                        super.onReceivedError(view, request, error)
+                        if (request?.isForMainFrame == true) {
+                            val description = error?.description?.toString() ?: "Failed to load URL"
+                            val code = error?.errorCode ?: 0
+                            viewModel.onConsoleLogReceived("ERROR", "HTTP/Network Error [$code]: $description", request.url?.toString() ?: "")
+                        }
                     }
 
                     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
@@ -307,4 +333,60 @@ fun WebViewContainer(
             webView.settings.cacheMode = if (cacheEnabled) WebSettings.LOAD_DEFAULT else WebSettings.LOAD_NO_CACHE
         }
     )
+}
+
+private fun handleCustomIntentUrl(context: Context, view: WebView?, url: String): Boolean {
+    val lower = url.lowercase()
+    if (lower.startsWith("http://") || lower.startsWith("https://") ||
+        lower.startsWith("file://") || lower.startsWith("data:") ||
+        lower.startsWith("about:") || lower.startsWith("javascript:")) {
+        return false // Let WebView handle web pages natively
+    }
+
+    try {
+        if (url.startsWith("intent://") || url.startsWith("intent:")) {
+            val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+            if (intent != null) {
+                intent.addCategory(Intent.CATEGORY_BROWSABLE)
+                intent.component = null
+                intent.selector = null
+
+                val packageManager = context.packageManager
+                val resolveInfo = packageManager.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                if (resolveInfo != null) {
+                    context.startActivity(intent)
+                    return true
+                }
+
+                // Fallback URL if target application is not installed
+                val fallbackUrl = intent.getStringExtra("browser_fallback_url")
+                if (!fallbackUrl.isNullOrBlank()) {
+                    view?.loadUrl(fallbackUrl)
+                    return true
+                }
+
+                // Market / Play Store fallback if package is present
+                val packageName = intent.`package`
+                if (!packageName.isNullOrBlank()) {
+                    val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName"))
+                    if (packageManager.resolveActivity(marketIntent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY) != null) {
+                        context.startActivity(marketIntent)
+                        return true
+                    }
+                }
+            }
+        } else {
+            // Custom protocols: mailto:, tel:, sms:, geo:, whatsapp:, tg:, market:, etc.
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            if (context.packageManager.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY) != null) {
+                context.startActivity(intent)
+                return true
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+
+    Toast.makeText(context, "Приложение не найдено для ссылки: ${url.take(60)}", Toast.LENGTH_SHORT).show()
+    return true
 }

@@ -192,8 +192,21 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         var formatted = input.trim()
         if (formatted.isBlank()) return
 
-        if (!formatted.startsWith("http://") && !formatted.startsWith("https://") && !formatted.startsWith("file://") && !formatted.startsWith("data:")) {
-            if (formatted.contains(".") && !formatted.contains(" ")) {
+        val lower = formatted.lowercase()
+        val isKnownScheme = lower.startsWith("http://") || lower.startsWith("https://") ||
+                lower.startsWith("file://") || lower.startsWith("data:") ||
+                lower.startsWith("intent://") || lower.startsWith("intent:") ||
+                lower.startsWith("mailto:") || lower.startsWith("tel:") ||
+                lower.startsWith("sms:") || lower.startsWith("geo:") ||
+                lower.startsWith("market:") || lower.startsWith("whatsapp:") ||
+                lower.startsWith("tg:") || lower.startsWith("viber:")
+
+        if (!isKnownScheme) {
+            if (lower.startsWith("localhost") || lower.startsWith("127.0.0.1") ||
+                lower.startsWith("192.168.") || lower.startsWith("10.") ||
+                lower.startsWith("172.") || lower.contains(".local")) {
+                formatted = "http://$formatted"
+            } else if (formatted.contains(".") && !formatted.contains(" ")) {
                 formatted = "https://$formatted"
             } else {
                 formatted = "https://www.google.com/search?q=" + java.net.URLEncoder.encode(formatted, "UTF-8")
