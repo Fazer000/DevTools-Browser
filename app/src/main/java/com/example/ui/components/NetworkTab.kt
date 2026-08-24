@@ -150,18 +150,35 @@ fun NetworkTabContent(
     val listState = rememberLazyListState()
     val coroutineScope = rememberCoroutineScope()
 
-    // Smart scroll tracking: user is at top if viewing index 0 near top offset
-    val isAtTop by remember {
+    var autoScrollToTop by remember { mutableStateOf(true) }
+
+    // Smart scroll tracking: detect if user is currently at the top
+    val isCurrentlyAtTop by remember {
         derivedStateOf {
-            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset <= 30
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset <= 20
+        }
+    }
+
+    LaunchedEffect(isCurrentlyAtTop) {
+        if (isCurrentlyAtTop) {
+            autoScrollToTop = true
+        }
+    }
+
+    // Detect manual scrolling away from top
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 30) {
+                autoScrollToTop = false
+            }
         }
     }
 
     val topRequestId = filteredRequests.firstOrNull()?.id
 
-    // Smart stick-to-top auto-scroll: ONLY when user is already at top
-    LaunchedEffect(topRequestId) {
-        if (isAtTop && topRequestId != null && filteredRequests.isNotEmpty()) {
+    // Smart stick-to-top auto-scroll: when new requests arrive and autoScrollToTop is enabled
+    LaunchedEffect(topRequestId, filteredRequests.size) {
+        if (autoScrollToTop && topRequestId != null && filteredRequests.isNotEmpty()) {
             listState.scrollToItem(0)
         }
     }
@@ -683,9 +700,10 @@ fun NetworkTabContent(
                 }
 
                 // Quick Floating Scroll To Top Button if user scrolled down
-                if (!isAtTop && filteredRequests.isNotEmpty()) {
+                if (!autoScrollToTop && filteredRequests.isNotEmpty()) {
                     SmallFloatingActionButton(
                         onClick = {
+                            autoScrollToTop = true
                             coroutineScope.launch { listState.animateScrollToItem(0) }
                         },
                         containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -694,11 +712,18 @@ fun NetworkTabContent(
                             .padding(12.dp)
                             .align(Alignment.BottomEnd)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowUp,
-                            contentDescription = "Scroll to top",
-                            modifier = Modifier.size(18.dp)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = "Scroll to top",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text("Top", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }

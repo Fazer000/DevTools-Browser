@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
@@ -13,7 +16,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,7 +44,6 @@ fun NetworkRequestDetailsSheet(
     onDismiss: () -> Unit
 ) {
     val clipboardManager = LocalClipboardManager.current
-    var activeSubTab by remember { mutableStateOf("Headers") }
     var copiedNotification by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(copiedNotification) {
@@ -57,6 +61,9 @@ fun NetworkRequestDetailsSheet(
         list.add("Timing")
         list
     }
+
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { availableTabs.size })
+    val coroutineScope = rememberCoroutineScope()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -148,20 +155,37 @@ fun NetworkRequestDetailsSheet(
 
             // Sub-Tabs Row
             ScrollableTabRow(
-                selectedTabIndex = availableTabs.indexOf(activeSubTab).coerceAtLeast(0),
+                selectedTabIndex = pagerState.currentPage,
                 edgePadding = 0.dp,
                 containerColor = Color.Transparent,
-                divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)) }
+                divider = { HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)) },
+                indicator = { tabPositions ->
+                    if (pagerState.currentPage in tabPositions.indices) {
+                        val currentTab = tabPositions[pagerState.currentPage]
+                        Box(
+                            Modifier
+                                .tabIndicatorOffset(currentTab)
+                                .height(3.dp)
+                                .padding(horizontal = 10.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary)
+                        )
+                    }
+                }
             ) {
-                availableTabs.forEach { tabName ->
+                availableTabs.forEachIndexed { index, tabName ->
                     Tab(
-                        selected = activeSubTab == tabName,
-                        onClick = { activeSubTab = tabName },
+                        selected = pagerState.currentPage == index,
+                        onClick = {
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(index)
+                            }
+                        },
                         text = {
                             Text(
                                 text = tabName,
                                 fontSize = 12.sp,
-                                fontWeight = if (activeSubTab == tabName) FontWeight.Bold else FontWeight.Normal
+                                fontWeight = if (pagerState.currentPage == index) FontWeight.Bold else FontWeight.Normal
                             )
                         }
                     )
@@ -170,9 +194,14 @@ fun NetworkRequestDetailsSheet(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Tab Contents
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                when (activeSubTab) {
+            // Tab Contents (Drag / Swipe Pager)
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) { page ->
+                when (availableTabs.getOrNull(page)) {
                     "Headers" -> HeadersTabContent(request, onCopy = { text, label ->
                         clipboardManager.setText(AnnotatedString(text))
                         copiedNotification = "$label copied!"

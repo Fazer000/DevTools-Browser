@@ -746,6 +746,60 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun updateStorageItem(storageType: String, key: String, newValue: String) {
+        val keyEscaped = JSONObject.quote(key)
+        val valueEscaped = JSONObject.quote(newValue)
+        val js = when (storageType) {
+            "Cookies" -> "document.cookie = encodeURIComponent($keyEscaped) + '=' + encodeURIComponent($valueEscaped) + '; path=/';"
+            "LocalStorage" -> "localStorage.setItem($keyEscaped, $valueEscaped);"
+            "SessionStorage" -> "sessionStorage.setItem($keyEscaped, $valueEscaped);"
+            else -> ""
+        }
+        if (js.isNotBlank()) {
+            val script = "(function() { try { $js } catch(e){} })(); " + com.example.browser.InjectedScripts.EXTRACT_STORAGE_JS
+            viewModelScope.launch {
+                _navigationAction.emit(NavigationAction.EvaluateJs(script))
+            }
+        }
+    }
+
+    fun deleteStorageItem(storageType: String, key: String) {
+        val keyEscaped = JSONObject.quote(key)
+        val js = when (storageType) {
+            "Cookies" -> "document.cookie = encodeURIComponent($keyEscaped) + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';"
+            "LocalStorage" -> "localStorage.removeItem($keyEscaped);"
+            "SessionStorage" -> "sessionStorage.removeItem($keyEscaped);"
+            else -> ""
+        }
+        if (js.isNotBlank()) {
+            val script = "(function() { try { $js } catch(e){} })(); " + com.example.browser.InjectedScripts.EXTRACT_STORAGE_JS
+            viewModelScope.launch {
+                _navigationAction.emit(NavigationAction.EvaluateJs(script))
+            }
+        }
+    }
+
+    fun clearStorage(storageType: String) {
+        val js = when (storageType) {
+            "Cookies" -> "document.cookie.split(';').forEach(function(c) { document.cookie = c.replace(/^ +/, '').replace(/=.*/, '=;expires=' + new Date().toUTCString() + ';path=/'); });"
+            "LocalStorage" -> "localStorage.clear();"
+            "SessionStorage" -> "sessionStorage.clear();"
+            else -> ""
+        }
+        if (js.isNotBlank()) {
+            val script = "(function() { try { $js } catch(e){} })(); " + com.example.browser.InjectedScripts.EXTRACT_STORAGE_JS
+            viewModelScope.launch {
+                _navigationAction.emit(NavigationAction.EvaluateJs(script))
+            }
+        }
+    }
+
+    fun refreshStorage() {
+        viewModelScope.launch {
+            _navigationAction.emit(NavigationAction.EvaluateJs(com.example.browser.InjectedScripts.EXTRACT_STORAGE_JS))
+        }
+    }
+
     private fun addConsoleLog(log: ConsoleLog) {
         consoleLogChannel.trySend(log)
     }

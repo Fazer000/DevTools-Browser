@@ -8,9 +8,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -125,6 +127,19 @@ fun DevToolsPanel(
             edgePadding = 8.dp,
             containerColor = MaterialTheme.colorScheme.surface,
             contentColor = MaterialTheme.colorScheme.primary,
+            indicator = { tabPositions ->
+                if (activeTab.ordinal in tabPositions.indices) {
+                    val currentTab = tabPositions[activeTab.ordinal]
+                    Box(
+                        Modifier
+                            .tabIndicatorOffset(currentTab)
+                            .height(3.dp)
+                            .padding(horizontal = 10.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary)
+                    )
+                }
+            },
             modifier = Modifier.fillMaxWidth()
         ) {
             DevToolsTab.entries.forEach { tab ->
@@ -202,7 +217,11 @@ fun DevToolsPanel(
                     StorageTab(
                         cookies = cookies,
                         localStorage = localStorage,
-                        sessionStorage = sessionStorage
+                        sessionStorage = sessionStorage,
+                        onUpdateItem = { type, key, value -> viewModel.updateStorageItem(type, key, value) },
+                        onDeleteItem = { type, key -> viewModel.deleteStorageItem(type, key) },
+                        onClearStorage = { type -> viewModel.clearStorage(type) },
+                        onRefreshStorage = { viewModel.refreshStorage() }
                     )
                 }
                 DevToolsTab.DEVICES -> {
