@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.example.browser.DevToolsBridgeListener
 import com.example.data.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -167,6 +170,9 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         data class ToggleInspector(val enable: Boolean) : NavigationAction()
     }
 
+    private val networkUpdateChannel = Channel<NetworkRequest>(Channel.UNLIMITED)
+    private val consoleLogChannel = Channel<ConsoleLog>(Channel.UNLIMITED)
+
     init {
         viewModelScope.launch {
             repository.lastUrlFlow.collect { url ->
@@ -183,6 +189,78 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             repository.devToolsVisibleFlow.collect { visible ->
                 _isDevToolsVisible.value = visible
+            }
+        }
+
+        // High-Performance Background Batching Loop for Network Requests
+        viewModelScope.launch(Dispatchers.Default) {
+            val batch = mutableListOf<NetworkRequest>()
+            while (isActive) {
+                val first = networkUpdateChannel.receive()
+                batch.add(first)
+                while (true) {
+                    val next = networkUpdateChannel.tryReceive().getOrNull() ?: break
+                    batch.add(next)
+                }
+
+                val currentList = _networkRequests.value.toMutableList()
+                for (req in batch) {
+                    val matchIndex = currentList.indexOfFirst {
+                        (it.url == req.url || (it.url.length > 5 && req.url.length > 5 && (it.url.endsWith(req.url) || req.url.endsWith(it.url)))) &&
+                        (it.method.equals(req.method, ignoreCase = true) || req.method.isBlank() || it.method.isBlank()) && (
+                            it.responseBody.startsWith("[Fetch/XHR") ||
+                            it.responseBody.startsWith("[Native") ||
+                            it.durationMs == 0L
+                        )
+                    }
+
+                    if (matchIndex != -1) {
+                        val existing = currentList[matchIndex]
+                        val updatedResponseBody = if (req.responseBody.isNotBlank() &&
+                            !req.responseBody.startsWith("[Fetch/XHR") &&
+                            !req.responseBody.startsWith("[Native")
+                        ) req.responseBody else existing.responseBody
+
+                        val updatedReq = existing.copy(
+                            method = if (req.method.isNotBlank()) req.method else existing.method,
+                            statusCode = if (req.statusCode != 0) req.statusCode else existing.statusCode,
+                            statusText = if (req.statusText.isNotBlank()) req.statusText else existing.statusText,
+                            type = if (req.type != "other") req.type else existing.type,
+                            durationMs = if (req.durationMs > 0) req.durationMs else existing.durationMs,
+                            sizeBytes = if (req.sizeBytes > 0) req.sizeBytes else existing.sizeBytes,
+                            requestHeaders = if (req.requestHeaders.isNotEmpty()) req.requestHeaders else existing.requestHeaders,
+                            requestBody = if (req.requestBody.isNotBlank()) req.requestBody else existing.requestBody,
+                            responseHeaders = if (req.responseHeaders.isNotEmpty()) req.responseHeaders else existing.responseHeaders,
+                            responseBody = updatedResponseBody
+                        )
+                        currentList[matchIndex] = updatedReq
+                        if (_selectedNetworkRequest.value?.id == existing.id) {
+                            _selectedNetworkRequest.value = updatedReq
+                        }
+                    } else {
+                        currentList.add(0, req)
+                    }
+                }
+                batch.clear()
+                _networkRequests.value = currentList.take(200)
+                delay(60)
+            }
+        }
+
+        // High-Performance Background Batching Loop for Console Logs
+        viewModelScope.launch(Dispatchers.Default) {
+            val batch = mutableListOf<ConsoleLog>()
+            while (isActive) {
+                val first = consoleLogChannel.receive()
+                batch.add(first)
+                while (true) {
+                    val next = consoleLogChannel.tryReceive().getOrNull() ?: break
+                    batch.add(next)
+                }
+                val currentLogs = _consoleLogs.value
+                _consoleLogs.value = (currentLogs + batch).takeLast(200)
+                batch.clear()
+                delay(60)
             }
         }
     }
@@ -517,76 +595,40 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     override fun onNetworkRequestJsonReceived(jsonString: String) {
-        try {
-            val obj = JSONObject(jsonString)
-            val url = obj.optString("url")
-            if (url.isBlank()) return
+        viewModelScope.launch(Dispatchers.Default) {
+            try {
+                val obj = JSONObject(jsonString)
+                val url = obj.optString("url")
+                if (url.isBlank()) return@launch
 
-            val reqHeadersMap = mutableMapOf<String, String>()
-            val reqHeadersObj = obj.optJSONObject("requestHeaders")
-            reqHeadersObj?.keys()?.forEach { k -> reqHeadersMap[k] = reqHeadersObj.getString(k) }
+                val reqHeadersMap = mutableMapOf<String, String>()
+                val reqHeadersObj = obj.optJSONObject("requestHeaders")
+                reqHeadersObj?.keys()?.forEach { k -> reqHeadersMap[k] = reqHeadersObj.getString(k) }
 
-            val resHeadersMap = mutableMapOf<String, String>()
-            val resHeadersObj = obj.optJSONObject("responseHeaders")
-            resHeadersObj?.keys()?.forEach { k -> resHeadersMap[k] = resHeadersObj.getString(k) }
+                val resHeadersMap = mutableMapOf<String, String>()
+                val resHeadersObj = obj.optJSONObject("responseHeaders")
+                resHeadersObj?.keys()?.forEach { k -> resHeadersMap[k] = resHeadersObj.getString(k) }
 
-            val req = NetworkRequest(
-                url = url,
-                method = obj.optString("method", "GET"),
-                statusCode = obj.optInt("statusCode", 200),
-                statusText = obj.optString("statusText", "OK"),
-                type = obj.optString("type", "fetch"),
-                durationMs = obj.optLong("durationMs", 0),
-                sizeBytes = obj.optLong("sizeBytes", 0),
-                initiator = obj.optString("initiator", "Script"),
-                requestHeaders = reqHeadersMap,
-                requestBody = obj.optString("requestBody", ""),
-                responseHeaders = resHeadersMap,
-                responseBody = obj.optString("responseBody", ""),
-                queryParams = parseQueryParams(url)
-            )
+                val req = NetworkRequest(
+                    url = url,
+                    method = obj.optString("method", "GET"),
+                    statusCode = obj.optInt("statusCode", 200),
+                    statusText = obj.optString("statusText", "OK"),
+                    type = obj.optString("type", "fetch"),
+                    durationMs = obj.optLong("durationMs", 0),
+                    sizeBytes = obj.optLong("sizeBytes", 0),
+                    initiator = obj.optString("initiator", "Script"),
+                    requestHeaders = reqHeadersMap,
+                    requestBody = obj.optString("requestBody", ""),
+                    responseHeaders = resHeadersMap,
+                    responseBody = obj.optString("responseBody", ""),
+                    queryParams = parseQueryParams(url)
+                )
 
-            viewModelScope.launch(Dispatchers.Main) {
-                val current = _networkRequests.value.toMutableList()
-                val matchIndex = current.indexOfFirst {
-                    (it.url == req.url || (it.url.length > 5 && req.url.length > 5 && (it.url.endsWith(req.url) || req.url.endsWith(it.url)))) &&
-                    (it.method.equals(req.method, ignoreCase = true) || req.method.isBlank() || it.method.isBlank()) && (
-                        it.responseBody.startsWith("[Fetch/XHR") ||
-                        it.responseBody.startsWith("[Native") ||
-                        it.durationMs == 0L
-                    )
-                }
-
-                if (matchIndex != -1) {
-                    val existing = current[matchIndex]
-                    val updatedResponseBody = if (req.responseBody.isNotBlank() &&
-                        !req.responseBody.startsWith("[Fetch/XHR") &&
-                        !req.responseBody.startsWith("[Native")
-                    ) req.responseBody else existing.responseBody
-
-                    val updatedReq = existing.copy(
-                        method = if (req.method.isNotBlank()) req.method else existing.method,
-                        statusCode = if (req.statusCode != 0) req.statusCode else existing.statusCode,
-                        statusText = if (req.statusText.isNotBlank()) req.statusText else existing.statusText,
-                        type = if (req.type != "other") req.type else existing.type,
-                        durationMs = if (req.durationMs > 0) req.durationMs else existing.durationMs,
-                        sizeBytes = if (req.sizeBytes > 0) req.sizeBytes else existing.sizeBytes,
-                        requestHeaders = if (req.requestHeaders.isNotEmpty()) req.requestHeaders else existing.requestHeaders,
-                        requestBody = if (req.requestBody.isNotBlank()) req.requestBody else existing.requestBody,
-                        responseHeaders = if (req.responseHeaders.isNotEmpty()) req.responseHeaders else existing.responseHeaders,
-                        responseBody = updatedResponseBody
-                    )
-                    current[matchIndex] = updatedReq
-                    if (_selectedNetworkRequest.value?.id == existing.id) {
-                        _selectedNetworkRequest.value = updatedReq
-                    }
-                } else {
-                    current.add(0, req)
-                }
-                _networkRequests.value = current.take(200)
+                networkUpdateChannel.trySend(req)
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -705,9 +747,7 @@ class BrowserViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun addConsoleLog(log: ConsoleLog) {
-        viewModelScope.launch(Dispatchers.Main) {
-            _consoleLogs.value = (_consoleLogs.value + log).takeLast(200)
-        }
+        consoleLogChannel.trySend(log)
     }
 
     private fun parseDomNode(obj: JSONObject): DomNode {

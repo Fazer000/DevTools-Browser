@@ -74,6 +74,7 @@ fun WebViewContainer(
         factory = { context ->
             WebView(context).apply {
                 val wv = this
+                setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
                 layoutParams = ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT
@@ -118,8 +119,6 @@ fun WebViewContainer(
 
                     override fun onLoadResource(view: WebView?, url: String?) {
                         super.onLoadResource(view, url)
-                        // Re-evaluate JS to catch dynamically loaded frames/scripts
-                        view?.evaluateJavascript(InjectedScripts.NETWORK_OVERRIDE_SCRIPT, null)
                     }
 
                     override fun onPageFinished(view: WebView?, url: String?) {

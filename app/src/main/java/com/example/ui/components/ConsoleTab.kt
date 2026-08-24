@@ -62,7 +62,7 @@ fun ConsoleTab(
     // Auto scroll to bottom when new logs arrive
     LaunchedEffect(filteredLogs.size) {
         if (filteredLogs.isNotEmpty()) {
-            listState.animateScrollToItem(filteredLogs.size - 1)
+            listState.scrollToItem(filteredLogs.size - 1)
         }
     }
 

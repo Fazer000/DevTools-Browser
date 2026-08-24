@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -21,9 +22,11 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.ContentCopy
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -141,6 +144,25 @@ fun NetworkTabContent(
                 searchBody = searchBody,
                 regexMode = regexMode
             )
+        }
+    }
+
+    val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+
+    // Smart scroll tracking: user is at top if viewing index 0 near top offset
+    val isAtTop by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset <= 30
+        }
+    }
+
+    val topRequestId = filteredRequests.firstOrNull()?.id
+
+    // Smart stick-to-top auto-scroll: ONLY when user is already at top
+    LaunchedEffect(topRequestId) {
+        if (isAtTop && topRequestId != null && filteredRequests.isNotEmpty()) {
+            listState.scrollToItem(0)
         }
     }
 
@@ -547,114 +569,137 @@ fun NetworkTabContent(
             }
             HorizontalDivider()
 
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .testTag("network_requests_list")
-            ) {
-                items(filteredRequests, key = { it.id }) { req ->
-                    val statusColor = when {
-                        req.statusCode in 200..299 -> StatusSuccess
-                        req.statusCode == 101 -> StatusInfo
-                        req.statusCode in 300..399 -> StatusWarning
-                        else -> StatusError
-                    }
-                    val displayPath = remember(req.url) { extractPathFromUrl(req.url) }
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("network_requests_list")
+                ) {
+                    items(filteredRequests, key = { it.id }) { req ->
+                        val statusColor = when {
+                            req.statusCode in 200..299 -> StatusSuccess
+                            req.statusCode == 101 -> StatusInfo
+                            req.statusCode in 300..399 -> StatusWarning
+                            else -> StatusError
+                        }
+                        val displayPath = remember(req.url) { extractPathFromUrl(req.url) }
 
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelectRequest(req) },
-                        color = if (selectedRequest?.id == req.id) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                        else Color.Transparent
-                    ) {
-                        Row(
+                        Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 5.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                .clickable { onSelectRequest(req) },
+                            color = if (selectedRequest?.id == req.id) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            else Color.Transparent
                         ) {
-                            // Status Badge
-                            Box(modifier = Modifier.width(42.dp), contentAlignment = Alignment.CenterStart) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                // Status Badge
+                                Box(modifier = Modifier.width(42.dp), contentAlignment = Alignment.CenterStart) {
+                                    Surface(
+                                        color = statusColor.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = if (req.statusCode == 0) "FAIL" else req.statusCode.toString(),
+                                            color = statusColor,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+
+                                // Method Badge
+                                Text(
+                                    text = req.method,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.width(48.dp)
+                                )
+
+                                // Relative URL Path (Domain Removed)
+                                Text(
+                                    text = displayPath,
+                                    fontSize = 11.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+
+                                // Type Tag
                                 Surface(
-                                    color = statusColor.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(4.dp)
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.width(40.dp)
                                 ) {
                                     Text(
-                                        text = if (req.statusCode == 0) "FAIL" else req.statusCode.toString(),
-                                        color = statusColor,
-                                        fontSize = 10.sp,
+                                        text = req.type.uppercase(),
+                                        fontSize = 8.sp,
                                         fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                                        maxLines = 1
+                                    )
+                                }
+
+                                // Timing
+                                Text(
+                                    text = if (req.durationMs > 0) "${req.durationMs}ms" else "-",
+                                    fontSize = 10.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.width(44.dp)
+                                )
+
+                                // Copy URL Icon Button
+                                IconButton(
+                                    onClick = {
+                                        clipboardManager.setText(AnnotatedString(req.url))
+                                        android.widget.Toast.makeText(context, "Copied URL: ${req.url}", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ContentCopy,
+                                        contentDescription = "Copy URL",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                        modifier = Modifier.size(13.dp)
                                     )
                                 }
                             }
-
-                            // Method Badge
-                            Text(
-                                text = req.method,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.width(48.dp)
-                            )
-
-                            // Relative URL Path (Domain Removed)
-                            Text(
-                                text = displayPath,
-                                fontSize = 11.sp,
-                                fontFamily = FontFamily.Monospace,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-
-                            // Type Tag
-                            Surface(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(4.dp),
-                                modifier = Modifier.width(40.dp)
-                            ) {
-                                Text(
-                                    text = req.type.uppercase(),
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
-                                    maxLines = 1
-                                )
-                            }
-
-                            // Timing
-                            Text(
-                                text = if (req.durationMs > 0) "${req.durationMs}ms" else "-",
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(44.dp)
-                            )
-
-                            // Copy URL Icon Button
-                            IconButton(
-                                onClick = {
-                                    clipboardManager.setText(AnnotatedString(req.url))
-                                    android.widget.Toast.makeText(context, "Copied URL: ${req.url}", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.ContentCopy,
-                                    contentDescription = "Copy URL",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(13.dp)
-                                )
-                            }
                         }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                }
+
+                // Quick Floating Scroll To Top Button if user scrolled down
+                if (!isAtTop && filteredRequests.isNotEmpty()) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            coroutineScope.launch { listState.animateScrollToItem(0) }
+                        },
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier
+                            .padding(12.dp)
+                            .align(Alignment.BottomEnd)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Scroll to top",
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
@@ -716,6 +761,11 @@ private fun matchesNetworkRequest(
         else -> req.type.equals(category, ignoreCase = true)
     }
     if (!categoryMatches) return false
+
+    // Fast path: if search and exclude queries are empty, match category immediately
+    if (searchQuery.isBlank() && excludeQuery.isBlank()) {
+        return true
+    }
 
     // Parse exclude words from excludeQuery box (comma or space separated)
     val excludeWordsList = excludeQuery
