@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -18,8 +19,9 @@ android {
     applicationId = "com.aistudio.devbrowser.inspector"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    val envVersionCode = System.getenv("VERSION_CODE")?.toIntOrNull()
+    versionCode = envVersionCode ?: 2
+    versionName = System.getenv("VERSION_NAME") ?: "1.0.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -41,11 +43,19 @@ android {
       } else if (!keystoreProp.isNullOrBlank()) {
         keystoreProp
       } else {
-        "${rootDir}/release.keystore"
+        "release.keystore"
       }
 
-      val keystoreFile = file(keystorePath)
+      val keystoreFile = if (File(keystorePath).isAbsolute) {
+        File(keystorePath)
+      } else if (rootProject.file(keystorePath).exists()) {
+        rootProject.file(keystorePath)
+      } else {
+        file(keystorePath)
+      }
+
       if (keystoreFile.exists()) {
+        logger.quiet("Signing with release keystore: ${keystoreFile.absolutePath}")
         storeFile = keystoreFile
         val envStorePass = System.getenv("STORE_PASSWORD")
         val propStorePass = keystoreProperties.getProperty("storePassword")
@@ -59,21 +69,8 @@ android {
         val propKeyPass = keystoreProperties.getProperty("keyPassword")
         keyPassword = if (!envKeyPass.isNullOrBlank()) envKeyPass else if (!propKeyPass.isNullOrBlank()) propKeyPass else "release_password"
       } else {
-        storeFile = file("${rootDir}/debug.keystore")
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
-      }
-    }
-    create("debugConfig") {
-      val keystoreFile = file("${rootDir}/release.keystore")
-      if (keystoreFile.exists()) {
-        storeFile = keystoreFile
-        storePassword = "release_password"
-        keyAlias = "upload"
-        keyPassword = "release_password"
-      } else {
-        storeFile = file("${rootDir}/debug.keystore")
+        logger.quiet("Release keystore not found at ${keystoreFile.absolutePath}, falling back to debug.keystore")
+        storeFile = rootProject.file("debug.keystore")
         storePassword = "android"
         keyAlias = "androiddebugkey"
         keyPassword = "android"
